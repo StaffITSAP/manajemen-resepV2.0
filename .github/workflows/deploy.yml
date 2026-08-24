@@ -1,0 +1,80 @@
+name: Deploy V2 to Strada cPanel
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      FTP_REMOTE_DIR: ./
+      DEPLOY_DIR: deploy/
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Prepare deploy folder
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf "$DEPLOY_DIR"
+          mkdir -p "$DEPLOY_DIR"
+
+          rsync -a \
+            --exclude=".git*" \
+            --exclude=".github" \
+            --exclude="node_modules" \
+            --exclude="tests" \
+            --exclude="storage" \
+            --exclude=".env" \
+            --exclude="public" \
+            --exclude="database/seeders" \
+            --exclude="database/factories" \
+            --exclude="*.md" \
+            --exclude="*.lock" \
+            --exclude="*.yml" \
+            --exclude="*.yaml" \
+            --exclude="package*.json" \
+            ./ "$DEPLOY_DIR"
+
+          if [ -d public ]; then
+            rsync -a \
+              --exclude="index.php" \
+              --exclude=".htaccess" \
+              public/ "$DEPLOY_DIR"
+          fi
+
+      - name: Dry-run deploy to Strada cPanel
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.CPANEL_FTP_SERVER }}
+          username: ${{ secrets.CPANEL_FTP_USERNAME }}
+          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          port: ${{ secrets.CPANEL_FTP_PORT || '21' }}
+          protocol: ${{ secrets.CPANEL_FTP_SECURE == 'true' && 'ftps' || 'ftp' }}
+          local-dir: ${{ env.DEPLOY_DIR }}
+          server-dir: ${{ env.FTP_REMOTE_DIR }}
+          dry-run: true
+          log-level: standard
+          exclude: |
+            **/.git*
+            **/.github*
+            node_modules/**
+            tests/**
+            storage/**
+            .env
+            .htaccess
+            index.php
+            .htaccsess
+            database/seeders/**
+            database/factories/**
+            *.md
+            *.lock
+            *.yml
+            *.yaml
+            package*.json
