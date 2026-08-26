@@ -53,7 +53,7 @@ jobs:
               public/ "$DEPLOY_DIR"
           fi
 
-      - name: Dry-run deploy to Strada cPanel
+      - name: Deploy to Strada cPanel
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.CPANEL_FTP_SERVER }}
@@ -64,7 +64,7 @@ jobs:
           local-dir: ${{ env.DEPLOY_DIR }}
           server-dir: ${{ env.FTP_REMOTE_DIR }}
           state-name: .ftp-deploy-sync-state-v2.json
-          dry-run: true
+          dry-run: false
           log-level: standard
           exclude: |
             **/.git*
