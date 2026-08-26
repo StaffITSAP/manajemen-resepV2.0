@@ -15,6 +15,10 @@ use RuntimeException;
 
 class PurchaseOrderLatestPriceSyncService
 {
+    public const SCAN_MODE_QUICK = 'quick';
+    public const SCAN_MODE_FULL = 'full';
+    public const QUICK_SYNC_OVERLAP_DAYS = 30;
+
     public function __construct(private AccurateClient $client, private mixed $sleeper = null) {}
 
     /**
@@ -154,6 +158,7 @@ class PurchaseOrderLatestPriceSyncService
     public function listParams(int $page, int $pageSize): array
     {
         return [
+            'fields'                    => 'id,number,transDate,approvalStatus',
             'filter.approvalStatus.val' => 'APPROVED',
             'sp.sort'                   => 'transDate|desc',
             'sp.page'                   => $page,
@@ -172,11 +177,13 @@ class PurchaseOrderLatestPriceSyncService
         int $maxDetails = 50,
         int $sleepMs = 500,
         array $attemptedPurchaseOrderIds = [],
+        string $scanMode = self::SCAN_MODE_QUICK,
     ): array
     {
         $page = max(1, $page);
         $pageSize = max(1, min($pageSize, 100));
         $maxDetails = max(1, min($maxDetails, 50));
+        $scanMode = $scanMode === self::SCAN_MODE_FULL ? self::SCAN_MODE_FULL : self::SCAN_MODE_QUICK;
         $attemptedPurchaseOrderIds = array_values(array_unique(array_filter(
             array_map('intval', $attemptedPurchaseOrderIds),
             fn(int $poId): bool => $poId > 0,
@@ -202,6 +209,8 @@ class PurchaseOrderLatestPriceSyncService
             'stage_complete' => false,
             'max_details_reached' => false,
             'attempted_purchase_order_ids' => $attemptedPurchaseOrderIds,
+            'scan_mode' => $scanMode,
+            'quick_boundary_reached' => false,
         ];
 
         $resp = $this->client->listPurchaseOrders($this->listParams($page, $pageSize));
@@ -268,6 +277,12 @@ class PurchaseOrderLatestPriceSyncService
         $sp = is_array($body) ? ($body['sp'] ?? []) : [];
         $pageCount = isset($sp['pageCount']) ? (int) $sp['pageCount'] : null;
 
+        if ($scanMode === self::SCAN_MODE_QUICK && $this->quickScanBoundaryReached($rows)) {
+            $stats['stage_complete'] = true;
+            $stats['quick_boundary_reached'] = true;
+            return $stats;
+        }
+
         if (($pageCount !== null && $page >= $pageCount) || count($rows) < $pageSize) {
             $stats['stage_complete'] = true;
             return $stats;
@@ -276,6 +291,29 @@ class PurchaseOrderLatestPriceSyncService
         $stats['next_page'] = $page + 1;
 
         return $stats;
+    }
+
+    private function quickScanBoundaryReached(array $rows): bool
+    {
+        if ($rows === []) {
+            return false;
+        }
+
+        $cutoff = Carbon::now(config('app.timezone'))->subDays(self::QUICK_SYNC_OVERLAP_DAYS)->startOfDay();
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                return false;
+            }
+
+            $date = $this->parseDate($row['transDate'] ?? null);
+
+            if ($date === null || $date->gte($cutoff)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

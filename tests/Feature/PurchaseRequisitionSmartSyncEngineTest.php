@@ -12,6 +12,7 @@ use App\Services\Accurate\AccurateItemUnitCacheSyncService;
 use App\Services\Accurate\AccurateItemUnitService;
 use App\Services\Accurate\PurchaseOrderLatestPriceSyncService;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
+use Carbon\Carbon;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Database\Schema\Blueprint;
@@ -26,6 +27,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Carbon::setTestNow('2026-08-26 12:00:00');
 
         Schema::dropIfExists('accurate_purchase_order_sync_states');
         Schema::dropIfExists('purchase_item_latest_prices');
@@ -98,6 +100,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
 
     protected function tearDown(): void
     {
+        Carbon::setTestNow();
         Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 1)->forceRelease();
         Cache::forget(PurchaseRequisitionSmartSync::STATUS_KEY);
 
@@ -310,7 +313,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         ]);
 
         $client = new SmartSyncPurchaseOrderClient($rows ?? []);
-        $result = (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(1, 100, 50, 0);
+        $result = (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(1, 2, 50, 0);
 
         $this->assertSame(range(2, 51), $client->detailCalls);
         $this->assertSame(1, $result['known_skipped']);
@@ -380,6 +383,184 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         $this->assertSame([1], $nextWorkflowClient->detailCalls);
         $this->assertTrue($nextWorkflow['stage_complete']);
         $this->assertDatabaseMissing('accurate_purchase_order_sync_states', ['purchase_order_accurate_id' => 1]);
+    }
+
+    public function test_quick_purchase_order_scan_starts_at_page_one_and_uses_lightweight_list_fields(): void
+    {
+        $client = new SmartSyncPagedPurchaseOrderClient([
+            1 => [
+                ['id' => 1001, 'number' => 'PO.1', 'transDate' => '26/08/2026', 'approvalStatus' => 'APPROVED'],
+            ],
+        ], pageCount: 1);
+
+        (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(1, 100, 50, 0);
+
+        $this->assertSame([
+            'fields' => 'id,number,transDate,approvalStatus',
+            'filter.approvalStatus.val' => 'APPROVED',
+            'sp.sort' => 'transDate|desc',
+            'sp.page' => 1,
+            'sp.pageSize' => 100,
+        ], $client->listParams[0]);
+    }
+
+    public function test_quick_purchase_order_scan_continues_when_page_contains_recent_or_cutoff_dates(): void
+    {
+        foreach ([1001, 1002] as $id) {
+            AccuratePurchaseOrderSyncState::create([
+                'purchase_order_accurate_id' => $id,
+                'purchase_order_number' => "PO.{$id}",
+                'purchase_order_date' => '2026-08-26',
+                'last_synced_at' => now(),
+            ]);
+        }
+
+        $client = new SmartSyncPagedPurchaseOrderClient([
+            1 => [
+                ['id' => 1001, 'number' => 'PO.1001', 'transDate' => '26/08/2026', 'approvalStatus' => 'APPROVED'],
+                ['id' => 1002, 'number' => 'PO.1002', 'transDate' => '27/07/2026', 'approvalStatus' => 'APPROVED'],
+            ],
+        ], pageCount: 2);
+
+        $result = (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(1, 2, 50, 0);
+
+        $this->assertFalse($result['stage_complete']);
+        $this->assertFalse($result['quick_boundary_reached']);
+        $this->assertSame(2, $result['next_page']);
+        $this->assertSame([], $client->detailCalls);
+    }
+
+    public function test_quick_purchase_order_scan_stops_after_entire_page_is_older_than_overlap_cutoff(): void
+    {
+        AccuratePurchaseOrderSyncState::create([
+            'purchase_order_accurate_id' => 1001,
+            'purchase_order_number' => 'PO.1001',
+            'purchase_order_date' => '2026-07-26',
+            'last_synced_at' => now(),
+        ]);
+
+        $client = new SmartSyncPagedPurchaseOrderClient([
+            1 => [
+                ['id' => 1001, 'number' => 'PO.1001', 'transDate' => '26/07/2026', 'approvalStatus' => 'APPROVED'],
+            ],
+        ], pageCount: 2);
+
+        $result = (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(1, 2, 50, 0);
+
+        $this->assertTrue($result['stage_complete']);
+        $this->assertTrue($result['quick_boundary_reached']);
+        $this->assertSame([], $client->detailCalls);
+    }
+
+    public function test_quick_purchase_order_scan_does_not_stop_when_page_crosses_cutoff(): void
+    {
+        foreach ([1001, 1002] as $id) {
+            AccuratePurchaseOrderSyncState::create([
+                'purchase_order_accurate_id' => $id,
+                'purchase_order_number' => "PO.{$id}",
+                'purchase_order_date' => '2026-07-27',
+                'last_synced_at' => now(),
+            ]);
+        }
+
+        $client = new SmartSyncPagedPurchaseOrderClient([
+            1 => [
+                ['id' => 1001, 'number' => 'PO.1001', 'transDate' => '27/07/2026', 'approvalStatus' => 'APPROVED'],
+                ['id' => 1002, 'number' => 'PO.1002', 'transDate' => '26/07/2026', 'approvalStatus' => 'APPROVED'],
+            ],
+        ], pageCount: 2);
+
+        $result = (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(1, 2, 50, 0);
+
+        $this->assertFalse($result['stage_complete']);
+        $this->assertFalse($result['quick_boundary_reached']);
+        $this->assertSame(2, $result['next_page']);
+    }
+
+    public function test_quick_purchase_order_scan_fails_safe_when_transaction_date_is_missing_or_malformed(): void
+    {
+        foreach ([1001, 1002] as $id) {
+            AccuratePurchaseOrderSyncState::create([
+                'purchase_order_accurate_id' => $id,
+                'purchase_order_number' => "PO.{$id}",
+                'purchase_order_date' => '2026-07-26',
+                'last_synced_at' => now(),
+            ]);
+        }
+
+        $missingDateClient = new SmartSyncPagedPurchaseOrderClient([
+            1 => [
+                ['id' => 1001, 'number' => 'PO.1001', 'approvalStatus' => 'APPROVED'],
+            ],
+        ], pageCount: 2);
+
+        $missingDateResult = (new PurchaseOrderLatestPriceSyncService($missingDateClient))->syncSmartUnprocessedPurchaseOrderBatch(1, 1, 50, 0);
+
+        $this->assertFalse($missingDateResult['stage_complete']);
+        $this->assertFalse($missingDateResult['quick_boundary_reached']);
+
+        $malformedDateClient = new SmartSyncPagedPurchaseOrderClient([
+            1 => [
+                ['id' => 1002, 'number' => 'PO.1002', 'transDate' => 'not-a-date', 'approvalStatus' => 'APPROVED'],
+            ],
+        ], pageCount: 2);
+
+        $malformedDateResult = (new PurchaseOrderLatestPriceSyncService($malformedDateClient))->syncSmartUnprocessedPurchaseOrderBatch(1, 1, 50, 0);
+
+        $this->assertFalse($malformedDateResult['stage_complete']);
+        $this->assertFalse($malformedDateResult['quick_boundary_reached']);
+    }
+
+    public function test_smart_purchase_order_batch_failed_list_does_not_complete_workflow(): void
+    {
+        $client = new class extends AccurateClient {
+            public function __construct() {}
+
+            public function listPurchaseOrders(array $params = []): array
+            {
+                return ['ok' => false, 'status' => 500, 'body' => ['error' => 'HTTP_ERROR']];
+            }
+
+            public function detailPurchaseOrder(int|string $id): array
+            {
+                throw new \RuntimeException('Detail must not be called after failed list.');
+            }
+        };
+
+        $result = (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(1, 100, 50, 0);
+
+        $this->assertFalse($result['ok']);
+        $this->assertFalse($result['stage_complete']);
+        $this->assertSame(1, $result['failures']);
+    }
+
+    public function test_full_purchase_order_scan_ignores_quick_overlap_boundary_and_keeps_traversing_history(): void
+    {
+        AccuratePurchaseOrderSyncState::create([
+            'purchase_order_accurate_id' => 1001,
+            'purchase_order_number' => 'PO.1001',
+            'purchase_order_date' => '2026-07-26',
+            'last_synced_at' => now(),
+        ]);
+
+        $client = new SmartSyncPagedPurchaseOrderClient([
+            1 => [
+                ['id' => 1001, 'number' => 'PO.1001', 'transDate' => '26/07/2026', 'approvalStatus' => 'APPROVED'],
+            ],
+        ], pageCount: 2);
+
+        $result = (new PurchaseOrderLatestPriceSyncService($client))->syncSmartUnprocessedPurchaseOrderBatch(
+            1,
+            1,
+            50,
+            0,
+            [],
+            PurchaseOrderLatestPriceSyncService::SCAN_MODE_FULL,
+        );
+
+        $this->assertFalse($result['stage_complete']);
+        $this->assertFalse($result['quick_boundary_reached']);
+        $this->assertSame(2, $result['next_page']);
     }
 
     public function test_purchase_order_stage_chains_with_delay_and_final_stage_releases_lock(): void
@@ -616,5 +797,62 @@ class SmartSyncPurchaseOrderClient extends AccurateClient
     public function postJson(string $path, array $body = [], array $query = []): array
     {
         throw new \RuntimeException('Smart Sync PO stage must not call remote writes.');
+    }
+}
+
+class SmartSyncPagedPurchaseOrderClient extends AccurateClient
+{
+    public array $detailCalls = [];
+    public array $listParams = [];
+
+    public function __construct(
+        private array $pageRows,
+        private array $failingIds = [],
+        private int $pageCount = 2,
+    ) {}
+
+    public function listPurchaseOrders(array $params = []): array
+    {
+        $this->listParams[] = $params;
+        $page = (int) ($params['sp.page'] ?? 1);
+
+        return [
+            'ok' => true,
+            'status' => 200,
+            'body' => [
+                's' => true,
+                'd' => $this->pageRows[$page] ?? [],
+                'sp' => ['page' => $page, 'pageCount' => $this->pageCount],
+            ],
+        ];
+    }
+
+    public function detailPurchaseOrder(int|string $id): array
+    {
+        $id = (int) $id;
+        $this->detailCalls[] = $id;
+
+        if (in_array($id, $this->failingIds, true)) {
+            return ['ok' => false, 'status' => 500, 'body' => ['error' => 'HTTP_ERROR']];
+        }
+
+        return [
+            'ok' => true,
+            'status' => 200,
+            'body' => [
+                's' => true,
+                'd' => [
+                    'id' => $id,
+                    'number' => "PO.{$id}",
+                    'transDate' => '26/08/2026',
+                    'detailItem' => [],
+                ],
+            ],
+        ];
+    }
+
+    public function postJson(string $path, array $body = [], array $query = []): array
+    {
+        throw new \RuntimeException('Smart Sync paged PO client must not call remote writes.');
     }
 }

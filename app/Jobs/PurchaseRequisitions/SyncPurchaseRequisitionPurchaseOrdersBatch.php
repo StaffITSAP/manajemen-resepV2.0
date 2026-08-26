@@ -23,6 +23,7 @@ class SyncPurchaseRequisitionPurchaseOrdersBatch implements ShouldQueue
         public string $lockOwner,
         public int $page = 1,
         public array $attemptedPurchaseOrderIds = [],
+        public string $scanMode = PurchaseOrderLatestPriceSyncService::SCAN_MODE_QUICK,
     )
     {
         $this->onConnection(PurchaseRequisitionSmartSync::QUEUE_CONNECTION);
@@ -35,13 +36,19 @@ class SyncPurchaseRequisitionPurchaseOrdersBatch implements ShouldQueue
             return;
         }
 
-        $result = $service->syncSmartUnprocessedPurchaseOrderBatch(
+        $arguments = [
             $this->page,
             100,
             PurchaseRequisitionSmartSync::BATCH_SIZE,
             PurchaseRequisitionSmartSync::REQUEST_DELAY_MS,
             $this->attemptedPurchaseOrderIds,
-        );
+        ];
+
+        if ($this->scanMode === PurchaseOrderLatestPriceSyncService::SCAN_MODE_FULL) {
+            $arguments[] = PurchaseOrderLatestPriceSyncService::SCAN_MODE_FULL;
+        }
+
+        $result = $service->syncSmartUnprocessedPurchaseOrderBatch(...$arguments);
 
         if (($result['stage_complete'] ?? false) || ($result['ok'] ?? true) === false) {
             PurchaseRequisitionSmartSync::releaseLock($this->lockOwner);
@@ -54,6 +61,7 @@ class SyncPurchaseRequisitionPurchaseOrdersBatch implements ShouldQueue
             $this->lockOwner,
             $nextPage,
             $nextPage === $this->page ? ($result['attempted_purchase_order_ids'] ?? []) : [],
+            $this->scanMode,
         )->delay(now()->addSeconds(PurchaseRequisitionSmartSync::INTER_BATCH_DELAY_SECONDS));
     }
 

@@ -147,6 +147,17 @@ class PurchaseOrderLatestPriceSyncServiceTest extends TestCase
         $this->assertSame('0', $candidates[0]['unit_price']);
     }
 
+    public function test_purchase_order_list_params_request_only_validated_lightweight_fields(): void
+    {
+        $this->assertSame([
+            'fields' => 'id,number,transDate,approvalStatus',
+            'filter.approvalStatus.val' => 'APPROVED',
+            'sp.sort' => 'transDate|desc',
+            'sp.page' => 2,
+            'sp.pageSize' => 20,
+        ], $this->service()->listParams(2, 20));
+    }
+
     public function test_missing_purchase_order_date_is_counted_as_malformed(): void
     {
         $inspection = $this->service()->extractLatestPriceCandidatesWithStats([
