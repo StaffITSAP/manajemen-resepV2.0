@@ -25,9 +25,11 @@ jobs:
           rm -rf "$DEPLOY_DIR"
           mkdir -p "$DEPLOY_DIR"
 
+          # Copy source repo ke staging deploy, kecuali file/folder non-production
           rsync -a \
             --exclude=".git*" \
             --exclude=".github" \
+            --exclude="deploy" \
             --exclude="node_modules" \
             --exclude="tests" \
             --exclude="storage" \
@@ -42,6 +44,8 @@ jobs:
             --exclude="package*.json" \
             ./ "$DEPLOY_DIR"
 
+          # Copy isi public ke root deployment,
+          # tetapi pertahankan index.php dan .htaccess versi production
           if [ -d public ]; then
             rsync -a \
               --exclude="index.php" \
@@ -65,6 +69,7 @@ jobs:
           exclude: |
             **/.git*
             **/.github*
+            deploy/**
             node_modules/**
             tests/**
             storage/**
