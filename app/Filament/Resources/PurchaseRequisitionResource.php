@@ -225,8 +225,9 @@ class PurchaseRequisitionResource extends Resource
                             TextEntry::make('requisition_type')->label('Tipe Permintaan')->formatStateUsing(fn() => 'Beli Barang'),
                             TextEntry::make('description')->label('Divisi Outlet')->placeholder('-'),
                             TextEntry::make('branch_name')->label('Cabang')->badge()->color('info'),
-                            TextEntry::make('status')->label('Status Lokal')->formatStateUsing(fn() => 'Draft Lokal')->badge()->color('warning'),
-                            TextEntry::make('sync_status')->label('Status Sinkronisasi')->formatStateUsing(fn() => 'Belum Dikirim ke Accurate')->badge()->color('warning'),
+                            TextEntry::make('status')->label('Status Lokal')->formatStateUsing(fn(?string $state): string => self::localStatusLabel($state))->badge()->color(fn(?string $state): string => self::localStatusColor($state)),
+                            TextEntry::make('sync_status')->label('Status Sinkronisasi')->formatStateUsing(fn(PurchaseRequisition $record): string => self::syncStatusLabel($record))->badge()->color(fn(PurchaseRequisition $record): string => self::syncStatusColor($record)),
+                            TextEntry::make('accurate_status')->label('Status Accurate')->placeholder('-')->badge()->color('gray'),
                             TextEntry::make('accurate_number')->label('Nomor Accurate')->placeholder('-'),
                             TextEntry::make('user.name')->label('Dibuat Oleh')->placeholder('-'),
                         ]),
@@ -389,23 +390,58 @@ class PurchaseRequisitionResource extends Resource
         return $visibleItems->implode('<br>');
     }
 
-    private static function statusSummary(PurchaseRequisition $record): string
+    public static function localStatusLabel(?string $state): string
     {
-        $status = match ($record->status) {
+        return match ($state) {
             'draft' => 'Draft Lokal',
             'submitted' => 'Submitted',
             'cancelled' => 'Dibatalkan',
-            default => (string) $record->status,
+            default => filled($state) ? (string) $state : '-',
         };
+    }
 
-        $syncStatus = match ($record->sync_status) {
-            'pending' => 'Belum Dikirim',
-            'processing' => 'Diproses',
-            'synced' => 'Tersinkron',
-            'failed' => 'Gagal',
-            default => (string) $record->sync_status,
+    public static function localStatusColor(?string $state): string
+    {
+        return match ($state) {
+            'draft' => 'warning',
+            'submitted' => 'success',
+            'cancelled' => 'danger',
+            default => 'gray',
         };
+    }
+
+    public static function syncStatusLabel(PurchaseRequisition $record): string
+    {
+        return match ($record->sync_status) {
+            'pending' => 'Belum Dikirim ke Accurate',
+            'processing' => 'Diproses',
+            'synced' => 'Terkirim ke Accurate',
+            'failed' => self::isAmbiguousSyncResult($record) ? 'Perlu Pemeriksaan' : 'Gagal Dikirim ke Accurate',
+            default => filled($record->sync_status) ? (string) $record->sync_status : '-',
+        };
+    }
+
+    public static function syncStatusColor(PurchaseRequisition $record): string
+    {
+        return match ($record->sync_status) {
+            'pending' => 'gray',
+            'processing' => 'info',
+            'synced' => 'success',
+            'failed' => self::isAmbiguousSyncResult($record) ? 'warning' : 'danger',
+            default => 'gray',
+        };
+    }
+
+    private static function statusSummary(PurchaseRequisition $record): string
+    {
+        $status = self::localStatusLabel($record->status);
+        $syncStatus = self::syncStatusLabel($record);
 
         return e($status) . '<br><span class="text-xs text-gray-500">' . e($syncStatus) . '</span>';
+    }
+
+    private static function isAmbiguousSyncResult(PurchaseRequisition $record): bool
+    {
+        return str_contains((string) $record->error_message, 'AMBIGUOUS_REVIEW_REQUIRED');
     }
 }

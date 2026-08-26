@@ -152,6 +152,71 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
         }
     }
 
+    public function test_view_displays_synced_draft_local_and_accurate_draft_statuses_separately(): void
+    {
+        $record = $this->requisition([
+            'status' => 'draft',
+            'sync_status' => 'synced',
+            'accurate_status' => 'DRAFT',
+            'accurate_id' => 102650,
+            'accurate_number' => 'DFT.26870',
+            'synced_at' => '2026-08-26 15:03:39',
+        ]);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertSee('Draft Lokal')
+            ->assertSee('Terkirim ke Accurate')
+            ->assertSee('DRAFT')
+            ->assertSee('DFT.26870')
+            ->assertDontSee('Belum Dikirim ke Accurate');
+    }
+
+    public function test_view_displays_pending_sync_as_not_sent(): void
+    {
+        $record = $this->requisition([
+            'sync_status' => 'pending',
+            'accurate_status' => null,
+            'accurate_id' => null,
+            'accurate_number' => null,
+        ]);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertSee('Draft Lokal')
+            ->assertSee('Belum Dikirim ke Accurate')
+            ->assertSee('-');
+    }
+
+    public function test_view_displays_definite_failed_sync_as_failed_send(): void
+    {
+        $record = $this->requisition([
+            'sync_status' => 'failed',
+            'accurate_status' => null,
+            'accurate_id' => null,
+            'accurate_number' => null,
+            'error_message' => 'Invalid unit',
+        ]);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertSee('Gagal Dikirim ke Accurate')
+            ->assertDontSee('Terkirim ke Accurate');
+    }
+
+    public function test_view_displays_ambiguous_failed_sync_as_review_required(): void
+    {
+        $record = $this->requisition([
+            'sync_status' => 'failed',
+            'accurate_status' => null,
+            'accurate_id' => null,
+            'accurate_number' => null,
+            'error_message' => 'AMBIGUOUS_REVIEW_REQUIRED: hasil pengiriman ke Accurate tidak pasti; jangan kirim ulang otomatis.',
+        ]);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertSee('Perlu Pemeriksaan')
+            ->assertDontSee('Terkirim ke Accurate')
+            ->assertDontSee('Belum Dikirim ke Accurate');
+    }
+
     public function test_confirmation_decline_does_not_call_sender(): void
     {
         $record = $this->requisition(['sync_status' => 'failed', 'error_message' => 'Invalid unit']);
