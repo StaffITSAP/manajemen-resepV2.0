@@ -99,6 +99,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
     protected function tearDown(): void
     {
         Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 1)->forceRelease();
+        Cache::forget(PurchaseRequisitionSmartSync::STATUS_KEY);
 
         Schema::dropIfExists('accurate_purchase_order_sync_states');
         Schema::dropIfExists('purchase_item_latest_prices');
@@ -120,6 +121,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
 
         $this->assertSame('started', $first['status']);
         $this->assertSame('already_running', $second['status']);
+        $this->assertTrue($service->isRunning());
         Queue::assertPushed(SyncPurchaseRequisitionItemUnitsBatch::class, 1);
         Queue::assertPushed(SyncPurchaseRequisitionItemUnitsBatch::class, function ($job): bool {
             return $this->hasSmartSyncQueueIsolation($job);
@@ -130,6 +132,10 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
     {
         $itemJob = new SyncPurchaseRequisitionItemUnitsBatch('owner-1');
         $poJob = new SyncPurchaseRequisitionPurchaseOrdersBatch('owner-1');
+
+        $this->assertSame(50, PurchaseRequisitionSmartSync::BATCH_SIZE);
+        $this->assertSame(500, PurchaseRequisitionSmartSync::REQUEST_DELAY_MS);
+        $this->assertSame(10, PurchaseRequisitionSmartSync::INTER_BATCH_DELAY_SECONDS);
 
         $this->assertSame('sync', config('queue.default'));
         $this->assertSame(90, config('queue.connections.database.retry_after'));
@@ -175,6 +181,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
             app(PurchaseRequisitionSmartSync::class)->start();
         } finally {
             $this->assertTrue(Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 1)->get());
+            $this->assertFalse(app(PurchaseRequisitionSmartSync::class)->isRunning());
         }
     }
 
@@ -409,6 +416,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
 
         Queue::assertNothingPushed();
         $this->assertTrue(Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 1)->get());
+        $this->assertFalse(app(PurchaseRequisitionSmartSync::class)->isRunning());
     }
 
     public function test_stale_jobs_do_not_perform_work_or_release_another_workflow_lock(): void
@@ -446,6 +454,19 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         (new SyncPurchaseRequisitionItemUnitsBatch($owner))->failed(new \RuntimeException('boom'));
 
         $this->assertTrue(Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 1)->get());
+        $this->assertFalse(app(PurchaseRequisitionSmartSync::class)->isRunning());
+    }
+
+    public function test_running_status_uses_lock_owner_and_stale_job_cannot_clear_new_workflow_status(): void
+    {
+        PurchaseRequisitionSmartSync::markRunning('owner-1');
+        $this->assertTrue(app(PurchaseRequisitionSmartSync::class)->isRunning());
+
+        PurchaseRequisitionSmartSync::clearRunning('owner-2');
+        $this->assertTrue(app(PurchaseRequisitionSmartSync::class)->isRunning());
+
+        PurchaseRequisitionSmartSync::clearRunning('owner-1');
+        $this->assertFalse(app(PurchaseRequisitionSmartSync::class)->isRunning());
     }
 
     public function test_existing_application_jobs_are_not_assigned_to_smart_sync_queue(): void

@@ -11,6 +11,7 @@ use Throwable;
 class PurchaseRequisitionSmartSync
 {
     public const LOCK_KEY = 'purchase_requisition_smart_sync';
+    public const STATUS_KEY = 'purchase_requisition_smart_sync_status';
     public const LOCK_TTL_SECONDS = 21600;
     public const BATCH_SIZE = 50;
     public const REQUEST_DELAY_MS = 500;
@@ -35,6 +36,7 @@ class PurchaseRequisitionSmartSync
         }
 
         $owner = $lock->owner();
+        static::markRunning($owner);
 
         try {
             SyncPurchaseRequisitionItemUnitsBatch::dispatch($owner);
@@ -50,6 +52,27 @@ class PurchaseRequisitionSmartSync
         ];
     }
 
+    public function isRunning(): bool
+    {
+        return Cache::has(self::STATUS_KEY);
+    }
+
+    public static function markRunning(string $owner): void
+    {
+        Cache::put(self::STATUS_KEY, ['lock_owner' => $owner], self::LOCK_TTL_SECONDS);
+    }
+
+    public static function clearRunning(string $owner): void
+    {
+        $status = Cache::get(self::STATUS_KEY);
+
+        if (is_array($status) && ($status['lock_owner'] ?? null) !== $owner) {
+            return;
+        }
+
+        Cache::forget(self::STATUS_KEY);
+    }
+
     public static function releaseLock(string $owner): void
     {
         $lock = Cache::restoreLock(self::LOCK_KEY, $owner);
@@ -58,6 +81,7 @@ class PurchaseRequisitionSmartSync
             return;
         }
 
+        static::clearRunning($owner);
         $lock->release();
     }
 

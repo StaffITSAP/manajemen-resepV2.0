@@ -123,6 +123,7 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
     protected function tearDown(): void
     {
         Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 1)->forceRelease();
+        Cache::forget(PurchaseRequisitionSmartSync::STATUS_KEY);
 
         Schema::dropIfExists('purchase_requisition_items');
         Schema::dropIfExists('purchase_requisitions');
@@ -143,6 +144,7 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
         Livewire::test(ListPurchaseRequisitions::class)
             ->assertActionVisible('smartSync')
             ->assertActionHasLabel('smartSync', 'Sinkron Data Permintaan Barang')
+            ->assertActionEnabled('smartSync')
             ->assertActionVisible('create')
             ->assertActionHasLabel('create', 'Buat Permintaan Barang');
 
@@ -166,6 +168,7 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
 
         $smartSync = Mockery::mock(PurchaseRequisitionSmartSync::class);
         $smartSync->shouldNotReceive('start');
+        $smartSync->shouldReceive('isRunning')->andReturnFalse();
         $this->app->instance(PurchaseRequisitionSmartSync::class, $smartSync);
 
         Livewire::test(ListPurchaseRequisitions::class)
@@ -191,6 +194,7 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
         $this->app->instance(AccurateClient::class, $accurateClient);
 
         $smartSync = Mockery::mock(PurchaseRequisitionSmartSync::class);
+        $smartSync->shouldReceive('isRunning')->andReturnFalse();
         $smartSync->shouldReceive('start')
             ->once()
             ->andReturn(['status' => 'started', 'lock_owner' => 'owner-1']);
@@ -214,15 +218,45 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
 
         $lock = Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 21600);
         $this->assertTrue($lock->get());
+        Cache::forget(PurchaseRequisitionSmartSync::STATUS_KEY);
 
         Livewire::test(ListPurchaseRequisitions::class)
             ->callAction('smartSync')
             ->assertNotified(Notification::make()
-                ->title('Sinkronisasi sedang berjalan.')
-                ->body('Tunggu proses yang sedang berjalan selesai sebelum menjalankan sinkronisasi lagi.')
+                ->title('Sinkronisasi sedang berjalan')
+                ->body('Sinkronisasi Data Permintaan Barang masih berlangsung. Tunggu hingga proses selesai.')
                 ->warning());
 
         Queue::assertNothingPushed();
+    }
+
+    public function test_running_server_state_disables_smart_sync_action_with_running_label(): void
+    {
+        $this->actingAs($this->createUser('superadmin'));
+
+        PurchaseRequisitionSmartSync::markRunning('owner-1');
+
+        Livewire::test(ListPurchaseRequisitions::class)
+            ->assertActionVisible('smartSync')
+            ->assertActionDisabled('smartSync')
+            ->assertActionHasLabel('smartSync', 'Sinkronisasi sedang berjalan...');
+    }
+
+    public function test_running_state_persists_across_fresh_component_render_and_releases_to_idle(): void
+    {
+        $this->actingAs($this->createUser('superadmin'));
+
+        PurchaseRequisitionSmartSync::markRunning('owner-1');
+
+        Livewire::test(ListPurchaseRequisitions::class)
+            ->assertActionDisabled('smartSync')
+            ->assertActionHasLabel('smartSync', 'Sinkronisasi sedang berjalan...');
+
+        PurchaseRequisitionSmartSync::clearRunning('owner-1');
+
+        Livewire::test(ListPurchaseRequisitions::class)
+            ->assertActionEnabled('smartSync')
+            ->assertActionHasLabel('smartSync', 'Sinkron Data Permintaan Barang');
     }
 
     public function test_list_page_does_not_reference_accurate_client_or_remote_write_paths(): void

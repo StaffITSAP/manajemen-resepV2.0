@@ -15,14 +15,22 @@ class ListPurchaseRequisitions extends ListRecords
 
     protected static ?string $breadcrumb = 'Daftar';
 
+    protected ?string $pollingInterval = '5s';
+
     protected function getHeaderActions(): array
     {
         return [
             Actions\Action::make('smartSync')
-                ->label('Sinkron Data Permintaan Barang')
+                ->label(fn(PurchaseRequisitionSmartSync $smartSync): string => $smartSync->isRunning()
+                    ? 'Sinkronisasi sedang berjalan...'
+                    : 'Sinkron Data Permintaan Barang')
                 ->icon('heroicon-o-arrow-path')
-                ->color('primary')
+                ->color(fn(PurchaseRequisitionSmartSync $smartSync): string => $smartSync->isRunning() ? 'gray' : 'primary')
                 ->visible(fn() => Auth::user()?->hasRole('superadmin'))
+                ->disabled(fn(PurchaseRequisitionSmartSync $smartSync): bool => $smartSync->isRunning())
+                ->extraAttributes(fn(PurchaseRequisitionSmartSync $smartSync): array => $smartSync->isRunning()
+                    ? ['class' => 'opacity-60 cursor-not-allowed [&_svg]:animate-spin']
+                    : [])
                 ->requiresConfirmation()
                 ->modalHeading('Sinkron Data Permintaan Barang')
                 ->modalDescription('Sistem akan memperbarui satuan barang dan harga pembelian terakhir dari Accurate secara bertahap. Proses akan berjalan di background.')
@@ -33,8 +41,8 @@ class ListPurchaseRequisitions extends ListRecords
 
                     if (($result['status'] ?? null) === 'already_running') {
                         Notification::make()
-                            ->title('Sinkronisasi sedang berjalan.')
-                            ->body('Tunggu proses yang sedang berjalan selesai sebelum menjalankan sinkronisasi lagi.')
+                            ->title('Sinkronisasi sedang berjalan')
+                            ->body('Sinkronisasi Data Permintaan Barang masih berlangsung. Tunggu hingga proses selesai.')
                             ->warning()
                             ->send();
 
