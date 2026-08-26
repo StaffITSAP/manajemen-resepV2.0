@@ -59,6 +59,7 @@ jobs:
           protocol: ${{ secrets.CPANEL_FTP_SECURE == 'true' && 'ftps' || 'ftp' }}
           local-dir: ${{ env.DEPLOY_DIR }}
           server-dir: ${{ env.FTP_REMOTE_DIR }}
+          state-name: .ftp-deploy-sync-state-v2.json
           dry-run: true
           log-level: standard
           exclude: |
