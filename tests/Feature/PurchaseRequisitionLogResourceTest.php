@@ -79,6 +79,10 @@ class PurchaseRequisitionLogResourceTest extends TestCase
             $table->json('response')->nullable();
             $table->text('error_message')->nullable();
             $table->timestamp('synced_at')->nullable();
+            $table->unsignedBigInteger('approved_by')->nullable();
+            $table->timestamp('approved_at')->nullable();
+            $table->unsignedBigInteger('rejected_by')->nullable();
+            $table->timestamp('rejected_at')->nullable();
             $table->timestamps();
         });
 
@@ -101,12 +105,23 @@ class PurchaseRequisitionLogResourceTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('purchase_requisition_activity_logs', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('purchase_requisition_id')->constrained('purchase_requisitions')->cascadeOnDelete();
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->string('action');
+            $table->text('summary')->nullable();
+            $table->json('changes')->nullable();
+            $table->timestamps();
+        });
+
         Filament::setCurrentPanel(Filament::getPanel('admin'));
     }
 
     protected function tearDown(): void
     {
         Schema::dropIfExists('purchase_requisition_items');
+        Schema::dropIfExists('purchase_requisition_activity_logs');
         Schema::dropIfExists('purchase_requisitions');
         Schema::dropIfExists('accurate_branches');
         Schema::dropIfExists('user_role');

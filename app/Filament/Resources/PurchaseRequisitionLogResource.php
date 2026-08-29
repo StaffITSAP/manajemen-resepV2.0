@@ -128,6 +128,11 @@ class PurchaseRequisitionLogResource extends Resource
                     ->state(fn(PurchaseRequisition $record): string => self::sendResultLabel($record))
                     ->badge()
                     ->color(fn(PurchaseRequisition $record): string => self::sendResultColor($record)),
+                Tables\Columns\TextColumn::make('last_edit_log')
+                    ->label('Aktivitas Edit')
+                    ->state(fn(PurchaseRequisition $record): string => self::lastEditSummary($record))
+                    ->html()
+                    ->wrap(),
             ])
             ->actions([
                 Tables\Actions\Action::make('detail')
@@ -140,6 +145,17 @@ class PurchaseRequisitionLogResource extends Resource
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup')
                     ->modalWidth('7xl'),
+                Tables\Actions\Action::make('editHistory')
+                    ->label('Riwayat Edit')
+                    ->icon('heroicon-o-clock')
+                    ->visible(fn(PurchaseRequisition $record): bool => $record->activityLogs->isNotEmpty())
+                    ->modalHeading(fn(PurchaseRequisition $record): string => 'Riwayat Edit PR #' . $record->id)
+                    ->modalContent(fn(PurchaseRequisition $record) => view('filament.components.purchase-requisition-edit-history', [
+                        'record' => $record->loadMissing(['activityLogs.user']),
+                    ]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalWidth('4xl'),
             ])
             ->bulkActions([])
             ->defaultSort('created_at', 'desc');
@@ -149,6 +165,7 @@ class PurchaseRequisitionLogResource extends Resource
     {
         return parent::getEloquentQuery()
             ->with(['user', 'items'])
+            ->with(['activityLogs' => fn($query) => $query->latest()->with('user')])
             ->withCount('items')
             ->withSum('items as items_total_price', 'total_price');
     }
@@ -242,5 +259,19 @@ class PurchaseRequisitionLogResource extends Resource
     private static function rupiah(mixed $value): string
     {
         return 'Rp ' . number_format((float) $value, 0, ',', '.');
+    }
+
+    public static function lastEditSummary(PurchaseRequisition $record): string
+    {
+        $log = $record->activityLogs->first();
+
+        if (! $log) {
+            return '-';
+        }
+
+        $actor = $log->user?->name ?: '-';
+        $time = $log->created_at?->format('d/m/Y H:i') ?: '-';
+
+        return e($log->action) . '<br><span class="text-xs text-gray-500">' . e("{$actor} - {$time}") . '</span>';
     }
 }

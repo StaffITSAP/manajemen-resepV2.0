@@ -16,11 +16,23 @@ class PurchaseRequisition extends Model
         'payload'    => 'array',
         'response'   => 'array',
         'synced_at'  => 'datetime',
+        'approved_at' => 'datetime',
+        'rejected_at' => 'datetime',
     ];
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function rejecter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
     }
 
     public function branch(): BelongsTo
@@ -31,5 +43,19 @@ class PurchaseRequisition extends Model
     public function items(): HasMany
     {
         return $this->hasMany(PurchaseRequisitionItem::class, 'purchase_requisition_id');
+    }
+
+    public function activityLogs(): HasMany
+    {
+        return $this->hasMany(PurchaseRequisitionActivityLog::class);
+    }
+
+    public function isPendingApprovalEditable(): bool
+    {
+        return $this->status === 'submitted'
+            && blank($this->approved_at)
+            && blank($this->rejected_at)
+            && blank($this->accurate_id)
+            && blank($this->accurate_number);
     }
 }

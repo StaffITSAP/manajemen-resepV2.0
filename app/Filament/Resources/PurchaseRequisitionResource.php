@@ -278,7 +278,7 @@ class PurchaseRequisitionResource extends Resource
                             TextEntry::make('requisition_type')->label('Tipe Permintaan')->formatStateUsing(fn() => 'Beli Barang'),
                             TextEntry::make('description')->label('Divisi Outlet')->placeholder('-'),
                             TextEntry::make('branch_name')->label('Cabang')->badge()->color('info'),
-                            TextEntry::make('status')->label('Status Lokal')->formatStateUsing(fn(?string $state): string => self::localStatusLabel($state))->badge()->color(fn(?string $state): string => self::localStatusColor($state)),
+                            TextEntry::make('approval_status')->label('Status Lokal')->state(fn(PurchaseRequisition $record): string => self::localStatusLabel($record))->badge()->color(fn(PurchaseRequisition $record): string => self::localStatusColor($record)),
                             TextEntry::make('sync_status')->label('Status Sinkronisasi')->formatStateUsing(fn(PurchaseRequisition $record): string => self::syncStatusLabel($record))->badge()->color(fn(PurchaseRequisition $record): string => self::syncStatusColor($record)),
                             TextEntry::make('accurate_status')->label('Status Accurate')->placeholder('-')->badge()->color('gray'),
                             TextEntry::make('accurate_number')->label('Nomor Accurate')->placeholder('-'),
@@ -311,7 +311,7 @@ class PurchaseRequisitionResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['branch', 'user', 'items']);
+        return parent::getEloquentQuery()->with(['approver', 'branch', 'rejecter', 'user', 'items']);
     }
 
     public static function getPages(): array
@@ -319,6 +319,7 @@ class PurchaseRequisitionResource extends Resource
         return [
             'index' => Pages\ListPurchaseRequisitions::route('/'),
             'create' => Pages\CreatePurchaseRequisition::route('/create'),
+            'edit' => Pages\EditPurchaseRequisition::route('/{record}/edit'),
             'view' => Pages\ViewPurchaseRequisition::route('/{record}'),
         ];
     }
@@ -443,19 +444,29 @@ class PurchaseRequisitionResource extends Resource
         return $visibleItems->implode('<br>');
     }
 
-    public static function localStatusLabel(?string $state): string
+    public static function localStatusLabel(PurchaseRequisition $record): string
     {
-        return match ($state) {
+        if ($record->sync_status === 'synced') {
+            $actorName = self::approvalActorName($record);
+
+            return filled($actorName) ? 'Disetujui oleh ' . $actorName : 'Disetujui';
+        }
+
+        return match ($record->status) {
             'draft' => 'Draft Lokal',
             'submitted' => 'Menunggu Approval',
-            'cancelled' => 'Dibatalkan',
-            default => filled($state) ? (string) $state : '-',
+            'cancelled' => filled($actorName = self::rejectionActorName($record)) ? 'Ditolak oleh ' . $actorName : 'Ditolak',
+            default => filled($record->status) ? (string) $record->status : '-',
         };
     }
 
-    public static function localStatusColor(?string $state): string
+    public static function localStatusColor(PurchaseRequisition $record): string
     {
-        return match ($state) {
+        if ($record->sync_status === 'synced') {
+            return 'success';
+        }
+
+        return match ($record->status) {
             'draft' => 'warning',
             'submitted' => 'warning',
             'cancelled' => 'danger',
@@ -487,10 +498,20 @@ class PurchaseRequisitionResource extends Resource
 
     private static function statusSummary(PurchaseRequisition $record): string
     {
-        $status = self::localStatusLabel($record->status);
+        $status = self::localStatusLabel($record);
         $syncStatus = self::syncStatusLabel($record);
 
         return e($status) . '<br><span class="text-xs text-gray-500">' . e($syncStatus) . '</span>';
+    }
+
+    private static function approvalActorName(PurchaseRequisition $record): string
+    {
+        return $record->approver?->name ?: '';
+    }
+
+    private static function rejectionActorName(PurchaseRequisition $record): string
+    {
+        return $record->rejecter?->name ?: '';
     }
 
     private static function isAmbiguousSyncResult(PurchaseRequisition $record): bool
@@ -520,6 +541,8 @@ class PurchaseRequisitionResource extends Resource
     {
         $record->update([
             'status' => 'cancelled',
+            'rejected_by' => auth()->id(),
+            'rejected_at' => now(),
             'error_message' => null,
         ]);
 
@@ -561,6 +584,11 @@ class PurchaseRequisitionResource extends Resource
         }
 
         if ($updated->sync_status === 'synced') {
+            $updated->update([
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+            ]);
+
             Notification::make()
                 ->success()
                 ->title('Permintaan Barang berhasil di-approve dan dikirim ke Accurate.')

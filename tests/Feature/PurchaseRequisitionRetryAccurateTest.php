@@ -84,6 +84,10 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
             $table->json('response')->nullable();
             $table->text('error_message')->nullable();
             $table->timestamp('synced_at')->nullable();
+            $table->unsignedBigInteger('approved_by')->nullable();
+            $table->timestamp('approved_at')->nullable();
+            $table->unsignedBigInteger('rejected_by')->nullable();
+            $table->timestamp('rejected_at')->nullable();
             $table->timestamps();
         });
 
@@ -153,7 +157,7 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
         }
     }
 
-    public function test_view_displays_synced_draft_local_and_accurate_draft_statuses_separately(): void
+    public function test_view_displays_synced_record_as_approved_and_accurate_draft_status_separately(): void
     {
         $record = $this->requisition([
             'status' => 'draft',
@@ -165,7 +169,7 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
         ]);
 
         Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
-            ->assertSee('Draft Lokal')
+            ->assertSee('Disetujui')
             ->assertSee('Terkirim ke Accurate')
             ->assertSee('DRAFT')
             ->assertSee('DFT.26870')

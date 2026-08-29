@@ -100,6 +100,10 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
             $table->json('response')->nullable();
             $table->text('error_message')->nullable();
             $table->timestamp('synced_at')->nullable();
+            $table->unsignedBigInteger('approved_by')->nullable();
+            $table->timestamp('approved_at')->nullable();
+            $table->unsignedBigInteger('rejected_by')->nullable();
+            $table->timestamp('rejected_at')->nullable();
             $table->timestamps();
         });
 
@@ -369,15 +373,60 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         $this->assertSame(1, $record->items()->count());
     }
 
-    public function test_resource_has_no_delete_or_edit_page_for_phase_2c(): void
+    public function test_resource_has_no_delete_page_and_has_pending_approval_edit_page(): void
     {
         $pages = array_keys(PurchaseRequisitionResource::getPages());
 
         $this->assertContains('index', $pages);
         $this->assertContains('create', $pages);
+        $this->assertContains('edit', $pages);
         $this->assertContains('view', $pages);
-        $this->assertNotContains('edit', $pages);
         $this->assertFalse(PurchaseRequisitionResource::canDelete(new PurchaseRequisition()));
+    }
+
+    public function test_local_status_label_includes_approval_and_rejection_actor(): void
+    {
+        Schema::dropIfExists('users');
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->string('password');
+            $table->string('username')->nullable();
+            $table->string('role')->nullable();
+            $table->softDeletes();
+            $table->timestamps();
+        });
+
+        $approver = \App\Models\User::create([
+            'name' => 'Supervisor Approval',
+            'email' => 'supervisor-approval@example.com',
+            'password' => 'secret',
+        ]);
+        $rejecter = \App\Models\User::create([
+            'name' => 'Supervisor Reject',
+            'email' => 'supervisor-reject@example.com',
+            'password' => 'secret',
+        ]);
+
+        $approved = new PurchaseRequisition([
+            'status' => 'submitted',
+            'sync_status' => 'synced',
+            'approved_by' => $approver->id,
+        ]);
+        $approved->setRelation('approver', $approver);
+
+        $rejected = new PurchaseRequisition([
+            'status' => 'cancelled',
+            'sync_status' => 'pending',
+            'rejected_by' => $rejecter->id,
+        ]);
+        $rejected->setRelation('rejecter', $rejecter);
+
+        $this->assertSame('Disetujui oleh Supervisor Approval', PurchaseRequisitionResource::localStatusLabel($approved));
+        $this->assertSame('Ditolak oleh Supervisor Reject', PurchaseRequisitionResource::localStatusLabel($rejected));
+        $this->assertSame('success', PurchaseRequisitionResource::localStatusColor($approved));
+        $this->assertSame('danger', PurchaseRequisitionResource::localStatusColor($rejected));
     }
 
     private function service(): CreateLocalPurchaseRequisition

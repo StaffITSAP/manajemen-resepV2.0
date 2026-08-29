@@ -12,6 +12,10 @@ class PurchaseRequisitionPolicy
 
     public function before(User $user, string $ability): bool|null
     {
+        if ($ability === 'update') {
+            return null;
+        }
+
         return $user->hasRole('superadmin') ? true : null;
     }
 
@@ -42,7 +46,8 @@ class PurchaseRequisitionPolicy
 
     public function update(User $user, PurchaseRequisition $purchaseRequisition): bool
     {
-        return false;
+        return ($user->hasRole('superadmin') || $user->hasPermission('edit_purchase_requisition'))
+            && $purchaseRequisition->isPendingApprovalEditable();
     }
 
     public function delete(User $user, PurchaseRequisition $purchaseRequisition): bool

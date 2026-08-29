@@ -37,6 +37,7 @@ class RolePermissionSeeder extends Seeder
 
             ['name' => 'view_purchase_requisition', 'description' => 'View Permintaan Barang'],
             ['name' => 'create_purchase_requisition', 'description' => 'Create Permintaan Barang'],
+            ['name' => 'edit_purchase_requisition', 'description' => 'Edit Permintaan Barang'],
             ['name' => 'approve_purchase_requisition', 'description' => 'Approve Permintaan Barang'],
             ['name' => 'reject_purchase_requisition', 'description' => 'Reject Permintaan Barang'],
         ];

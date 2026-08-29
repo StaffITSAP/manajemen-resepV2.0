@@ -20,6 +20,12 @@ class ViewPurchaseRequisition extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('edit')
+                ->label('Edit')
+                ->icon('heroicon-o-pencil-square')
+                ->color('gray')
+                ->url(fn(PurchaseRequisition $record): string => PurchaseRequisitionResource::getUrl('edit', ['record' => $record]))
+                ->visible(fn(PurchaseRequisition $record): bool => auth()->user()?->can('update', $record) === true),
             Action::make('approve')
                 ->label('Approve')
                 ->icon('heroicon-o-check-circle')
@@ -88,6 +94,8 @@ class ViewPurchaseRequisition extends ViewRecord
 
                     $record->update([
                         'status' => 'cancelled',
+                        'rejected_by' => auth()->id(),
+                        'rejected_at' => now(),
                         'error_message' => null,
                     ]);
 
@@ -161,6 +169,13 @@ class ViewPurchaseRequisition extends ViewRecord
         }
 
         if ($this->record->sync_status === 'synced') {
+            $this->record->update([
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+            ]);
+
+            $this->record = $this->record->fresh(['items']) ?? $this->record;
+
             Notification::make()
                 ->success()
                 ->title('Permintaan Barang berhasil di-approve dan dikirim ke Accurate.')

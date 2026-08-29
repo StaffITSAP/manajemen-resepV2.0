@@ -62,6 +62,10 @@ class PurchaseRequisitionAccurateDraftTest extends TestCase
             $table->json('response')->nullable();
             $table->text('error_message')->nullable();
             $table->timestamp('synced_at')->nullable();
+            $table->unsignedBigInteger('approved_by')->nullable();
+            $table->timestamp('approved_at')->nullable();
+            $table->unsignedBigInteger('rejected_by')->nullable();
+            $table->timestamp('rejected_at')->nullable();
             $table->timestamps();
         });
 
