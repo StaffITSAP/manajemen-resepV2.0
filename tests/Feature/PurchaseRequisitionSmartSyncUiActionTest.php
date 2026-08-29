@@ -3,9 +3,13 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\PurchaseRequisitionResource\Pages\ListPurchaseRequisitions;
+use App\Models\AccurateBranch;
+use App\Models\Permission;
+use App\Models\PurchaseRequisition;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Accurate\AccurateClient;
+use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
@@ -259,6 +263,42 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
             ->assertActionHasLabel('smartSync', 'Sinkron Data Permintaan Barang');
     }
 
+    public function test_table_approve_action_sends_submitted_pending_requisition_to_accurate(): void
+    {
+        $this->actingAs($this->createUser('superadmin'));
+
+        $record = $this->createSubmittedRequisition();
+
+        $sender = Mockery::mock(PurchaseRequisitionSender::class);
+        $sender->shouldReceive('sendDraft')
+            ->once()
+            ->withArgs(fn(PurchaseRequisition $arg): bool => $arg->is($record))
+            ->andReturnUsing(function (PurchaseRequisition $record): PurchaseRequisition {
+                $record->update([
+                    'sync_status' => 'synced',
+                    'accurate_id' => 102200,
+                    'accurate_number' => 'DFT.26745',
+                    'accurate_status' => 'DRAFT',
+                    'error_message' => null,
+                    'synced_at' => now(),
+                ]);
+
+                return $record->fresh(['items']);
+            });
+        $this->app->instance(PurchaseRequisitionSender::class, $sender);
+
+        Livewire::test(ListPurchaseRequisitions::class)
+            ->assertTableActionVisible('approve', $record)
+            ->callTableAction('approve', $record)
+            ->assertHasNoTableActionErrors()
+            ->assertNotified(Notification::make()
+                ->success()
+                ->title('Permintaan Barang berhasil di-approve dan dikirim ke Accurate.')
+                ->body("Nomor Accurate: DFT.26745\nStatus Accurate: DRAFT"));
+
+        $this->assertSame('synced', $record->fresh()->sync_status);
+    }
+
     public function test_list_page_does_not_reference_accurate_client_or_remote_write_paths(): void
     {
         $contents = file_get_contents(app_path('Filament/Resources/PurchaseRequisitionResource/Pages/ListPurchaseRequisitions.php'));
@@ -287,9 +327,55 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
         ]);
 
         $user->roles()->attach($role);
+
+        if ($roleName === 'staff') {
+            $permissions = collect([
+                ['name' => 'view_purchase_requisition', 'description' => 'View Permintaan Barang'],
+                ['name' => 'create_purchase_requisition', 'description' => 'Create Permintaan Barang'],
+            ])->map(fn(array $permission): Permission => Permission::query()->firstOrCreate(
+                ['name' => $permission['name']],
+                $permission,
+            ));
+
+            $role->permissions()->syncWithoutDetaching($permissions->pluck('id'));
+        }
+
         $user->load('roles');
 
         return $user;
+    }
+
+    private function createSubmittedRequisition(): PurchaseRequisition
+    {
+        $branch = AccurateBranch::query()->create([
+            'accurate_id' => 50,
+            'name' => 'Kantor Pusat',
+        ]);
+
+        $record = PurchaseRequisition::query()->create([
+            'trans_date' => '2026-08-22',
+            'requisition_type' => 'PURCHASE',
+            'description' => 'Outlet A',
+            'accurate_branch_id' => $branch->id,
+            'branch_accurate_id' => 50,
+            'branch_name' => 'Kantor Pusat',
+            'status' => 'submitted',
+            'sync_status' => 'pending',
+        ]);
+
+        $record->items()->create([
+            'item_accurate_id' => 790,
+            'item_no' => '100069',
+            'item_name' => 'Alchemy 200gr',
+            'item_unit_accurate_id' => 50,
+            'item_unit_name' => 'pcs',
+            'quantity' => '2.000000',
+            'required_date' => '2026-08-24',
+            'latest_purchase_unit_price' => '75000.00000000',
+            'total_price' => '150000.00000000',
+        ]);
+
+        return $record->fresh(['items']);
     }
 
     private function assertPurchaseRequisitionTableLayoutStillDeclared(): void

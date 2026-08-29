@@ -154,6 +154,7 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
             'email' => 'tester@example.com',
             'password' => 'secret',
             'username' => 'tester',
+            'role' => 'superadmin',
         ]);
 
         $this->actingAs($user);
@@ -173,33 +174,12 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_create_page_saves_local_record_before_invoking_sender_and_redirects_to_view(): void
+    public function test_create_page_saves_local_record_without_invoking_sender_and_redirects_to_view(): void
     {
         $item = $this->seedLocalDependencies();
 
         $sender = Mockery::mock(PurchaseRequisitionSender::class);
-        $sender->shouldReceive('sendDraft')
-            ->once()
-            ->withArgs(function (PurchaseRequisition $record): bool {
-                $this->assertNotNull($record->id);
-                $this->assertSame(1, PurchaseRequisition::count());
-                $this->assertSame(1, $record->items()->count());
-                $this->assertSame('pending', $record->fresh()->sync_status);
-
-                return true;
-            })
-            ->andReturnUsing(function (PurchaseRequisition $record): PurchaseRequisition {
-                $record->update([
-                    'sync_status' => 'synced',
-                    'accurate_id' => 102200,
-                    'accurate_number' => 'DFT.26745',
-                    'accurate_status' => 'DRAFT',
-                    'error_message' => null,
-                    'synced_at' => now(),
-                ]);
-
-                return $record->fresh(['items']);
-            });
+        $sender->shouldReceive('sendDraft')->never();
         $this->app->instance(PurchaseRequisitionSender::class, $sender);
 
         Livewire::test(CreatePurchaseRequisition::class)
@@ -209,30 +189,22 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
             ->assertRedirect(PurchaseRequisitionResource::getUrl('view', ['record' => 1]))
             ->assertNotified(Notification::make()
                 ->success()
-                ->title('Permintaan Barang berhasil dibuat')
-                ->body("Nomor Accurate: DFT.26745\nStatus Accurate: DRAFT"));
+                ->title('Permintaan Barang berhasil disubmit')
+                ->body('Permintaan Barang menunggu approval SPV sebelum dikirim ke Accurate.'));
 
         $record = PurchaseRequisition::query()->with('items')->firstOrFail();
-        $this->assertSame('synced', $record->sync_status);
-        $this->assertSame('DFT.26745', $record->accurate_number);
-        $this->assertSame('DRAFT', $record->accurate_status);
+        $this->assertSame('submitted', $record->status);
+        $this->assertSame('pending', $record->sync_status);
+        $this->assertNull($record->accurate_number);
+        $this->assertNull($record->accurate_status);
     }
 
-    public function test_definite_sender_failure_keeps_local_parent_and_items_without_retry(): void
+    public function test_submit_does_not_attempt_definite_sender_failure_path(): void
     {
         $item = $this->seedLocalDependencies();
 
         $sender = Mockery::mock(PurchaseRequisitionSender::class);
-        $sender->shouldReceive('sendDraft')
-            ->once()
-            ->andReturnUsing(function (PurchaseRequisition $record): PurchaseRequisition {
-                $record->update([
-                    'sync_status' => 'failed',
-                    'error_message' => 'Accurate menolak Permintaan Barang.',
-                ]);
-
-                return $record->fresh(['items']);
-            });
+        $sender->shouldReceive('sendDraft')->never();
         $this->app->instance(PurchaseRequisitionSender::class, $sender);
 
         Livewire::test(CreatePurchaseRequisition::class)
@@ -241,31 +213,23 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
             ->assertHasNoFormErrors()
             ->assertRedirect(PurchaseRequisitionResource::getUrl('view', ['record' => 1]))
             ->assertNotified(Notification::make()
-                ->danger()
-                ->title('Permintaan Barang berhasil disimpan, tetapi belum berhasil dikirim ke Accurate.')
-                ->body('Silakan buka detail Permintaan Barang untuk meninjau status pengiriman.'));
+                ->success()
+                ->title('Permintaan Barang berhasil disubmit')
+                ->body('Permintaan Barang menunggu approval SPV sebelum dikirim ke Accurate.'));
 
         $record = PurchaseRequisition::query()->with('items')->firstOrFail();
-        $this->assertSame('failed', $record->sync_status);
+        $this->assertSame('submitted', $record->status);
+        $this->assertSame('pending', $record->sync_status);
         $this->assertSame(1, PurchaseRequisition::count());
         $this->assertSame(1, $record->items->count());
     }
 
-    public function test_ambiguous_sender_result_does_not_retry_and_shows_warning(): void
+    public function test_submit_does_not_attempt_ambiguous_sender_path(): void
     {
         $item = $this->seedLocalDependencies();
 
         $sender = Mockery::mock(PurchaseRequisitionSender::class);
-        $sender->shouldReceive('sendDraft')
-            ->once()
-            ->andReturnUsing(function (PurchaseRequisition $record): PurchaseRequisition {
-                $record->update([
-                    'sync_status' => 'failed',
-                    'error_message' => 'AMBIGUOUS_REVIEW_REQUIRED: hasil pengiriman ke Accurate tidak pasti; jangan kirim ulang otomatis.',
-                ]);
-
-                return $record->fresh(['items']);
-            });
+        $sender->shouldReceive('sendDraft')->never();
         $this->app->instance(PurchaseRequisitionSender::class, $sender);
 
         Livewire::test(CreatePurchaseRequisition::class)
@@ -274,21 +238,19 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
             ->assertHasNoFormErrors()
             ->assertRedirect(PurchaseRequisitionResource::getUrl('view', ['record' => 1]))
             ->assertNotified(Notification::make()
-                ->warning()
-                ->title('Status pengiriman ke Accurate perlu diperiksa.')
-                ->body('Jangan kirim ulang sebelum memastikan apakah Permintaan Barang sudah terbentuk di Accurate.'));
+                ->success()
+                ->title('Permintaan Barang berhasil disubmit')
+                ->body('Permintaan Barang menunggu approval SPV sebelum dikirim ke Accurate.'));
     }
 
-    public function test_unexpected_sender_exception_is_logged_and_local_record_survives(): void
+    public function test_submit_does_not_resolve_sender_or_log_send_exception(): void
     {
         $item = $this->seedLocalDependencies();
 
         Log::spy();
 
         $sender = Mockery::mock(PurchaseRequisitionSender::class);
-        $sender->shouldReceive('sendDraft')
-            ->once()
-            ->andThrow(new \RuntimeException('socket timeout with bearer secret'));
+        $sender->shouldReceive('sendDraft')->never();
         $this->app->instance(PurchaseRequisitionSender::class, $sender);
 
         Livewire::test(CreatePurchaseRequisition::class)
@@ -297,23 +259,24 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
             ->assertHasNoFormErrors()
             ->assertRedirect(PurchaseRequisitionResource::getUrl('view', ['record' => 1]))
             ->assertNotified(Notification::make()
-                ->danger()
-                ->title('Permintaan Barang berhasil disimpan, tetapi proses kirim ke Accurate mengalami kendala.')
-                ->body('Silakan buka detail Permintaan Barang dan periksa status sinkronisasi.'));
+                ->success()
+                ->title('Permintaan Barang berhasil disubmit')
+                ->body('Permintaan Barang menunggu approval SPV sebelum dikirim ke Accurate.'));
 
         $record = PurchaseRequisition::query()->with('items')->firstOrFail();
         $this->assertSame('pending', $record->sync_status);
         $this->assertSame(1, $record->items->count());
 
-        Log::shouldHaveReceived('error')->once();
+        Log::shouldNotHaveReceived('error');
     }
 
-    public function test_create_page_renders_simpan_dan_kirim_label_without_exposing_credentials(): void
+    public function test_create_page_renders_submit_label_without_exposing_credentials(): void
     {
         $this->seedLocalDependencies();
 
         Livewire::test(CreatePurchaseRequisition::class)
-            ->assertSee('Simpan & Kirim')
+            ->assertSee('Submit')
+            ->assertDontSee('Simpan & Kirim')
             ->assertDontSee('Bearer')
             ->assertDontSee('X-Api-AppKey')
             ->assertDontSee('test-token');

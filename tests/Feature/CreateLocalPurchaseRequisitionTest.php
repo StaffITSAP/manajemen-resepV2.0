@@ -167,7 +167,7 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         ]);
 
         $this->assertSame('PURCHASE', $record->requisition_type);
-        $this->assertSame('draft', $record->status);
+        $this->assertSame('submitted', $record->status);
         $this->assertSame('pending', $record->sync_status);
         $this->assertNull($record->accurate_id);
         $this->assertNull($record->accurate_number);

@@ -45,12 +45,12 @@ class User extends Authenticatable
     public function hasRole($roles): bool
     {
         if (is_string($roles)) {
-            return $this->roles->contains('name', $roles) || $this->role === $roles;
+            return $this->role === $roles || $this->roles->contains('name', $roles);
         }
 
         if (is_array($roles)) {
             foreach ($roles as $role) {
-                if ($this->roles->contains('name', $role) || $this->role === $role) {
+                if ($this->role === $role || $this->roles->contains('name', $role)) {
                     return true;
                 }
             }

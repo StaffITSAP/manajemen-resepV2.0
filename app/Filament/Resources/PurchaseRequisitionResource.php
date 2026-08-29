@@ -9,6 +9,7 @@ use App\Models\AccurateItemUnit;
 use App\Models\PurchaseItemLatestPrice;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
+use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists\Components\Grid;
@@ -17,10 +18,12 @@ use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
+use Filament\Notifications\Notification;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class PurchaseRequisitionResource extends Resource
 {
@@ -208,8 +211,58 @@ class PurchaseRequisitionResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->label('Lihat'),
+                    ->label('Lihat')
+                    ->extraAttributes(['class' => 'w-20 justify-start text-left']),
+                Tables\Actions\Action::make('approve')
+                    ->label('Approve')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->extraAttributes(['class' => 'w-20 justify-start text-left'])
+                    ->visible(fn(PurchaseRequisition $record): bool => self::canApproveRecord($record))
+                    ->requiresConfirmation()
+                    ->modalHeading('Approve Permintaan Barang')
+                    ->modalDescription('Permintaan Barang akan dikirim ke Accurate sebagai DRAFT.')
+                    ->modalSubmitActionLabel('Approve')
+                    ->modalCancelActionLabel('Batal')
+                    ->action(function (PurchaseRequisition $record): void {
+                        if (! self::canApproveRecord($record)) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Permintaan Barang tidak dapat di-approve.')
+                                ->body('Status atau akses approval tidak memenuhi syarat.')
+                                ->send();
+
+                            return;
+                        }
+
+                        self::sendApprovedRecordToAccurate($record);
+                    }),
+                Tables\Actions\Action::make('reject')
+                    ->label('Reject')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->extraAttributes(['class' => 'w-20 justify-start text-left'])
+                    ->visible(fn(PurchaseRequisition $record): bool => self::canRejectRecord($record))
+                    ->requiresConfirmation()
+                    ->modalHeading('Reject Permintaan Barang')
+                    ->modalDescription('Permintaan Barang akan dibatalkan secara lokal dan tidak dikirim ke Accurate.')
+                    ->modalSubmitActionLabel('Reject')
+                    ->modalCancelActionLabel('Batal')
+                    ->action(function (PurchaseRequisition $record): void {
+                        if (! self::canRejectRecord($record)) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Permintaan Barang tidak dapat di-reject.')
+                                ->body('Status atau akses reject tidak memenuhi syarat.')
+                                ->send();
+
+                            return;
+                        }
+
+                        self::rejectRecord($record);
+                    }),
             ])
+            ->actionsAlignment('flex-col !items-start !justify-start gap-1')
             ->bulkActions([])
             ->defaultSort('created_at', 'desc');
     }
@@ -394,7 +447,7 @@ class PurchaseRequisitionResource extends Resource
     {
         return match ($state) {
             'draft' => 'Draft Lokal',
-            'submitted' => 'Submitted',
+            'submitted' => 'Menunggu Approval',
             'cancelled' => 'Dibatalkan',
             default => filled($state) ? (string) $state : '-',
         };
@@ -404,7 +457,7 @@ class PurchaseRequisitionResource extends Resource
     {
         return match ($state) {
             'draft' => 'warning',
-            'submitted' => 'success',
+            'submitted' => 'warning',
             'cancelled' => 'danger',
             default => 'gray',
         };
@@ -443,5 +496,84 @@ class PurchaseRequisitionResource extends Resource
     private static function isAmbiguousSyncResult(PurchaseRequisition $record): bool
     {
         return str_contains((string) $record->error_message, 'AMBIGUOUS_REVIEW_REQUIRED');
+    }
+
+    private static function canApproveRecord(PurchaseRequisition $record): bool
+    {
+        return auth()->user()?->can('approve', $record) === true
+            && $record->status === 'submitted'
+            && $record->sync_status === 'pending'
+            && blank($record->accurate_id)
+            && blank($record->accurate_number);
+    }
+
+    private static function canRejectRecord(PurchaseRequisition $record): bool
+    {
+        return auth()->user()?->can('reject', $record) === true
+            && $record->status === 'submitted'
+            && $record->sync_status === 'pending'
+            && blank($record->accurate_id)
+            && blank($record->accurate_number);
+    }
+
+    private static function rejectRecord(PurchaseRequisition $record): void
+    {
+        $record->update([
+            'status' => 'cancelled',
+            'error_message' => null,
+        ]);
+
+        Notification::make()
+            ->success()
+            ->title('Permintaan Barang berhasil di-reject.')
+            ->body('Data lokal dibatalkan dan tidak dikirim ke Accurate.')
+            ->send();
+    }
+
+    private static function sendApprovedRecordToAccurate(PurchaseRequisition $record): void
+    {
+        try {
+            /** @var PurchaseRequisition $updated */
+            $updated = app(PurchaseRequisitionSender::class)->sendDraft($record);
+        } catch (Throwable $exception) {
+            Log::error('Purchase Requisition list approval send failed unexpectedly.', [
+                'purchase_requisition_id' => $record->id,
+                'exception' => $exception,
+            ]);
+
+            Notification::make()
+                ->danger()
+                ->title('Permintaan Barang belum berhasil dikirim ke Accurate.')
+                ->body('Silakan tinjau kembali status pengiriman sebelum mencoba lagi.')
+                ->send();
+
+            return;
+        }
+
+        if (str_contains((string) $updated->error_message, 'AMBIGUOUS_REVIEW_REQUIRED')) {
+            Notification::make()
+                ->warning()
+                ->title('Status pengiriman ke Accurate perlu diperiksa.')
+                ->body('Jangan kirim ulang sebelum memastikan dokumen di Accurate.')
+                ->send();
+
+            return;
+        }
+
+        if ($updated->sync_status === 'synced') {
+            Notification::make()
+                ->success()
+                ->title('Permintaan Barang berhasil di-approve dan dikirim ke Accurate.')
+                ->body("Nomor Accurate: {$updated->accurate_number}\nStatus Accurate: {$updated->accurate_status}")
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->danger()
+            ->title('Permintaan Barang belum berhasil dikirim ke Accurate.')
+            ->body('Data lokal tetap tersimpan. Silakan tinjau status pengiriman sebelum mencoba lagi.')
+            ->send();
     }
 }

@@ -34,7 +34,7 @@ class CreateLocalPurchaseRequisition
                 'accurate_branch_id' => $branch->id,
                 'branch_accurate_id' => $branch->accurate_id,
                 'branch_name' => $branch->name,
-                'status' => 'draft',
+                'status' => 'submitted',
                 'sync_status' => 'pending',
                 'accurate_status' => null,
                 'accurate_id' => null,

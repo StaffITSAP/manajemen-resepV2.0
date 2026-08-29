@@ -114,6 +114,7 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
             'email' => 'tester@example.com',
             'password' => 'secret',
             'username' => 'tester',
+            'role' => 'superadmin',
         ]));
     }
 
@@ -264,7 +265,7 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
             ->assertHasNoActionErrors()
             ->assertNotified(Notification::make()
                 ->success()
-                ->title('Permintaan Barang berhasil dikirim ke Accurate.')
+                ->title('Permintaan Barang berhasil di-approve dan dikirim ke Accurate.')
                 ->body("Nomor Accurate: DFT.26745\nStatus Accurate: DRAFT"))
             ->assertActionHidden('retryAccurate')
             ->assertDontSee('Bearer')
@@ -276,6 +277,42 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
         $this->assertSame(102200, $fresh->accurate_id);
         $this->assertSame('DFT.26745', $fresh->accurate_number);
         $this->assertNotNull($fresh->synced_at);
+    }
+
+    public function test_approve_action_sends_submitted_pending_requisition_to_accurate(): void
+    {
+        $record = $this->requisition(['status' => 'submitted', 'sync_status' => 'pending']);
+        $this->addItem($record);
+
+        $sender = Mockery::mock(PurchaseRequisitionSender::class);
+        $sender->shouldReceive('sendDraft')
+            ->once()
+            ->withArgs(fn(PurchaseRequisition $arg): bool => $arg->is($record))
+            ->andReturnUsing(function (PurchaseRequisition $record): PurchaseRequisition {
+                $record->update([
+                    'sync_status' => 'synced',
+                    'accurate_id' => 102200,
+                    'accurate_number' => 'DFT.26745',
+                    'accurate_status' => 'DRAFT',
+                    'error_message' => null,
+                    'synced_at' => now(),
+                ]);
+
+                return $record->fresh(['items']);
+            });
+        $this->app->instance(PurchaseRequisitionSender::class, $sender);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertActionVisible('approve')
+            ->callAction('approve')
+            ->assertHasNoActionErrors()
+            ->assertNotified(Notification::make()
+                ->success()
+                ->title('Permintaan Barang berhasil di-approve dan dikirim ke Accurate.')
+                ->body("Nomor Accurate: DFT.26745\nStatus Accurate: DRAFT"))
+            ->assertActionHidden('approve');
+
+        $this->assertSame('synced', $record->fresh()->sync_status);
     }
 
     public function test_repeat_definite_failure_preserves_local_parent_and_details_without_second_call(): void

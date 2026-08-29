@@ -99,6 +99,8 @@ class UserResource extends Resource
                         'owner' => 'warning',
                         'staff' => 'info',
                         'kitchen' => 'success',
+                        'spv' => 'primary',
+                        default => 'gray',
                     })
                     ->label('Role Utama'),
                 Tables\Columns\TextColumn::make('created_at')

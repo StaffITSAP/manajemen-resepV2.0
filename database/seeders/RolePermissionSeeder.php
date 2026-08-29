@@ -34,10 +34,15 @@ class RolePermissionSeeder extends Seeder
             
             ['name' => 'export_excel', 'description' => 'Export Excel'],
             ['name' => 'manage_users', 'description' => 'Manage Users'],
+
+            ['name' => 'view_purchase_requisition', 'description' => 'View Permintaan Barang'],
+            ['name' => 'create_purchase_requisition', 'description' => 'Create Permintaan Barang'],
+            ['name' => 'approve_purchase_requisition', 'description' => 'Approve Permintaan Barang'],
+            ['name' => 'reject_purchase_requisition', 'description' => 'Reject Permintaan Barang'],
         ];
 
         foreach ($permissions as $permission) {
-            Permission::create($permission);
+            Permission::firstOrCreate(['name' => $permission['name']], $permission);
         }
 
         // Buat roles
@@ -46,10 +51,11 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'owner', 'description' => 'Owner'],
             ['name' => 'staff', 'description' => 'Staff'],
             ['name' => 'kitchen', 'description' => 'Kitchen Staff'],
+            ['name' => 'spv', 'description' => 'Supervisor'],
         ];
 
         foreach ($roles as $role) {
-            Role::create($role);
+            Role::firstOrCreate(['name' => $role['name']], $role);
         }
 
         // Assign permissions to roles
@@ -57,26 +63,34 @@ class RolePermissionSeeder extends Seeder
         $owner = Role::where('name', 'owner')->first();
         $staff = Role::where('name', 'staff')->first();
         $kitchen = Role::where('name', 'kitchen')->first();
+        $spv = Role::where('name', 'spv')->first();
 
         // Superadmin gets all permissions
-        $superadmin->permissions()->attach(Permission::all());
+        $superadmin->permissions()->syncWithoutDetaching(Permission::all());
 
         // Owner gets most permissions except user management
         $ownerPermissions = Permission::where('name', '!=', 'manage_users')->get();
-        $owner->permissions()->attach($ownerPermissions);
+        $owner->permissions()->syncWithoutDetaching($ownerPermissions);
 
         // Staff permissions
         $staffPermissions = Permission::whereIn('name', [
             'view_master_satuan', 'view_master_barang', 'create_master_barang', 'edit_master_barang',
             'view_resep', 'create_resep', 'edit_resep',
-            'view_produksi', 'create_produksi', 'edit_produksi'
+            'view_produksi', 'create_produksi', 'edit_produksi',
+            'view_purchase_requisition', 'create_purchase_requisition',
         ])->get();
-        $staff->permissions()->attach($staffPermissions);
+        $staff->permissions()->syncWithoutDetaching($staffPermissions);
 
         // Kitchen permissions
         $kitchenPermissions = Permission::whereIn('name', [
             'view_resep', 'view_produksi', 'create_produksi', 'edit_produksi'
         ])->get();
-        $kitchen->permissions()->attach($kitchenPermissions);
+        $kitchen->permissions()->syncWithoutDetaching($kitchenPermissions);
+
+        // SPV can review and approve submitted purchase requisitions.
+        $spvPermissions = Permission::whereIn('name', [
+            'view_purchase_requisition', 'approve_purchase_requisition', 'reject_purchase_requisition',
+        ])->get();
+        $spv->permissions()->syncWithoutDetaching($spvPermissions);
     }
 }

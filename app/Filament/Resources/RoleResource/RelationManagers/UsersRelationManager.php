@@ -57,6 +57,8 @@ class UsersRelationManager extends RelationManager
                         'owner' => 'warning',
                         'staff' => 'info',
                         'kitchen' => 'success',
+                        'spv' => 'primary',
+                        default => 'gray',
                     })
                     ->label('Role Utama'),
             ])
