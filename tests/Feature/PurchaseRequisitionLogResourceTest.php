@@ -22,6 +22,8 @@ class PurchaseRequisitionLogResourceTest extends TestCase
         Schema::dropIfExists('purchase_requisition_items');
         Schema::dropIfExists('purchase_requisitions');
         Schema::dropIfExists('accurate_branches');
+        Schema::dropIfExists('role_permission');
+        Schema::dropIfExists('permissions');
         Schema::dropIfExists('user_role');
         Schema::dropIfExists('roles');
         Schema::dropIfExists('users');
@@ -45,6 +47,20 @@ class PurchaseRequisitionLogResourceTest extends TestCase
             $table->string('description')->nullable();
             $table->softDeletes();
             $table->timestamps();
+        });
+
+        Schema::create('permissions', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->unique();
+            $table->string('description')->nullable();
+            $table->softDeletes();
+            $table->timestamps();
+        });
+
+        Schema::create('role_permission', function (Blueprint $table) {
+            $table->foreignId('role_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('permission_id')->constrained()->cascadeOnDelete();
+            $table->primary(['role_id', 'permission_id']);
         });
 
         Schema::create('user_role', function (Blueprint $table) {
@@ -124,6 +140,8 @@ class PurchaseRequisitionLogResourceTest extends TestCase
         Schema::dropIfExists('purchase_requisition_activity_logs');
         Schema::dropIfExists('purchase_requisitions');
         Schema::dropIfExists('accurate_branches');
+        Schema::dropIfExists('role_permission');
+        Schema::dropIfExists('permissions');
         Schema::dropIfExists('user_role');
         Schema::dropIfExists('roles');
         Schema::dropIfExists('users');

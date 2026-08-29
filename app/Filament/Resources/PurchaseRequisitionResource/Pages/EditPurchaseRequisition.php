@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\PurchaseRequisitionResource\Pages;
 
 use App\Filament\Resources\PurchaseRequisitionResource;
+use App\Models\AccurateItem;
 use App\Models\PurchaseRequisition;
 use App\Services\PurchaseRequisitions\UpdateLocalPurchaseRequisition;
 use Filament\Actions\Action;
@@ -34,8 +35,12 @@ class EditPurchaseRequisition extends EditRecord
         /** @var PurchaseRequisition $record */
         $record = $this->record->loadMissing('items');
 
+        $data['requisition_type_display'] = 'Beli Barang';
+        $data['branch_display'] = $record->branch_name;
         $data['items'] = $record->items->map(fn($item): array => [
-            'accurate_item_id' => $item->accurate_item_id,
+            'accurate_item_id' => $item->accurate_item_id ?: AccurateItem::query()
+                ->where('accurate_id', $item->item_accurate_id)
+                ->value('id'),
             'item_no_display' => $item->item_no,
             'quantity' => $item->quantity,
             'item_unit_accurate_id' => $item->item_unit_accurate_id,

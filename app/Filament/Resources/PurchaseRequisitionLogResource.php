@@ -31,7 +31,10 @@ class PurchaseRequisitionLogResource extends Resource
 
     public static function canAccess(): bool
     {
-        return Auth::user()?->hasRole('superadmin') ?? false;
+        $user = Auth::user();
+
+        return $user?->hasRole('superadmin') === true
+            || $user?->hasPermission('view_purchase_requisition_log') === true;
     }
 
     public static function canViewAny(): bool
