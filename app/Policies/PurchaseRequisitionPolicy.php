@@ -21,12 +21,13 @@ class PurchaseRequisitionPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasPermission('view_purchase_requisition');
+        return $user->hasPermission('view_purchase_requisition_own')
+            || $user->hasPermission('view_purchase_requisition_all');
     }
 
     public function view(User $user, PurchaseRequisition $purchaseRequisition): bool
     {
-        return $user->hasPermission('view_purchase_requisition');
+        return $purchaseRequisition->isVisibleTo($user);
     }
 
     public function create(User $user): bool
@@ -47,6 +48,7 @@ class PurchaseRequisitionPolicy
     public function update(User $user, PurchaseRequisition $purchaseRequisition): bool
     {
         return ($user->hasRole('superadmin') || $user->hasPermission('edit_purchase_requisition'))
+            && $purchaseRequisition->isVisibleTo($user)
             && $purchaseRequisition->isPendingApprovalEditable();
     }
 

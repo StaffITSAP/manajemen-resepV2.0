@@ -166,7 +166,16 @@ class PurchaseRequisitionLogResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
+
+        if ($user) {
+            $query->visibleTo($user);
+        } else {
+            $query->whereRaw('0 = 1');
+        }
+
+        return $query
             ->with(['user', 'items'])
             ->with(['activityLogs' => fn($query) => $query->latest()->with('user')])
             ->withCount('items')

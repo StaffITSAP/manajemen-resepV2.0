@@ -335,6 +335,7 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
         if ($roleName === 'staff') {
             $permissions = collect([
                 ['name' => 'view_purchase_requisition', 'description' => 'View Permintaan Barang'],
+                ['name' => 'view_purchase_requisition_own', 'description' => 'View Own Permintaan Barang'],
                 ['name' => 'create_purchase_requisition', 'description' => 'Create Permintaan Barang'],
             ])->map(fn(array $permission): Permission => Permission::query()->firstOrCreate(
                 ['name' => $permission['name']],

@@ -186,8 +186,8 @@ class EditPurchaseRequisitionTest extends TestCase
 
     public function test_pending_authorized_user_can_see_and_open_edit(): void
     {
-        $user = $this->userWithPermission('view_purchase_requisition', 'edit_purchase_requisition');
-        $record = $this->requisition();
+        $user = $this->userWithPermission('view_purchase_requisition_own', 'edit_purchase_requisition');
+        $record = $this->requisition(['user_id' => $user->id]);
         $this->actingAs($user);
 
         $this->assertTrue($user->can('update', $record));
@@ -198,15 +198,16 @@ class EditPurchaseRequisitionTest extends TestCase
 
     public function test_unauthorized_user_cannot_edit_pending_record(): void
     {
-        $this->actingAs($this->userWithPermission('view_purchase_requisition'));
-        $record = $this->requisition();
+        $user = $this->userWithPermission('view_purchase_requisition_own');
+        $this->actingAs($user);
+        $record = $this->requisition(['user_id' => $user->id]);
 
         $this->assertFalse(auth()->user()->can('update', $record));
     }
 
     public function test_full_detail_edit_updates_same_record_replaces_snapshots_and_logs_activity(): void
     {
-        $user = $this->userWithPermission('view_purchase_requisition', 'edit_purchase_requisition');
+        $user = $this->userWithPermission('view_purchase_requisition_own', 'edit_purchase_requisition');
         $old = $this->item(790, 'OLD-1', 'Item Lama');
         $new = $this->item(791, 'NEW-1', 'Item Baru');
         $this->unit($old, 50, 'pcs');
@@ -275,11 +276,12 @@ class EditPurchaseRequisitionTest extends TestCase
 
     public function test_approved_and_rejected_records_are_locked_for_button_and_direct_access(): void
     {
-        $this->actingAs($this->userWithPermission('view_purchase_requisition', 'edit_purchase_requisition'));
+        $user = $this->userWithPermission('view_purchase_requisition_own', 'edit_purchase_requisition');
+        $this->actingAs($user);
 
         foreach ([
-            $this->requisition(['approved_at' => now(), 'approved_by' => 1, 'accurate_id' => 1, 'accurate_number' => 'DFT.1']),
-            $this->requisition(['status' => 'cancelled', 'rejected_at' => now(), 'rejected_by' => 1]),
+            $this->requisition(['user_id' => $user->id, 'approved_at' => now(), 'approved_by' => 1, 'accurate_id' => 1, 'accurate_number' => 'DFT.1']),
+            $this->requisition(['user_id' => $user->id, 'status' => 'cancelled', 'rejected_at' => now(), 'rejected_by' => 1]),
         ] as $record) {
             $this->assertFalse(auth()->user()->can('update', $record));
         }
@@ -287,7 +289,7 @@ class EditPurchaseRequisitionTest extends TestCase
 
     public function test_race_condition_rejects_save_without_partial_update(): void
     {
-        $user = $this->userWithPermission('view_purchase_requisition', 'edit_purchase_requisition');
+        $user = $this->userWithPermission('view_purchase_requisition_own', 'edit_purchase_requisition');
         $item = $this->item(790, 'ITEM-1', 'Item');
         $this->unit($item, 50, 'pcs');
         $this->price($item, 50, '100.00000000', 'PO-1');

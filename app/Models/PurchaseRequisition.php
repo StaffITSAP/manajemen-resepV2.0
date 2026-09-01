@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -48,6 +49,30 @@ class PurchaseRequisition extends Model
     public function activityLogs(): HasMany
     {
         return $this->hasMany(PurchaseRequisitionActivityLog::class);
+    }
+
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->hasRole('superadmin') || $user->hasPermission('view_purchase_requisition_all')) {
+            return $query;
+        }
+
+        if ($user->hasPermission('view_purchase_requisition_own')) {
+            return $query->where('user_id', $user->id);
+        }
+
+        return $query->whereRaw('0 = 1');
+    }
+
+    public function isVisibleTo(User $user): bool
+    {
+        if ($user->hasRole('superadmin') || $user->hasPermission('view_purchase_requisition_all')) {
+            return true;
+        }
+
+        return $user->hasPermission('view_purchase_requisition_own')
+            && filled($this->user_id)
+            && (int) $this->user_id === (int) $user->id;
     }
 
     public function isPendingApprovalEditable(): bool

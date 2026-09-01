@@ -22,6 +22,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -310,6 +311,21 @@ class PurchaseRequisitionResource extends Resource
     }
 
     public static function getEloquentQuery(): Builder
+    {
+        $query = static::baseEloquentQuery();
+        $user = auth()->user();
+
+        return $user ? $query->visibleTo($user) : $query->whereRaw('0 = 1');
+    }
+
+    public static function resolveRecordRouteBinding(int | string $key): ?Model
+    {
+        return app(static::getModel())
+            ->resolveRouteBindingQuery(static::baseEloquentQuery(), $key, static::getRecordRouteKeyName())
+            ->first();
+    }
+
+    private static function baseEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with(['approver', 'branch', 'rejecter', 'user', 'items']);
     }

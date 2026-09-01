@@ -36,6 +36,8 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'manage_users', 'description' => 'Manage Users'],
 
             ['name' => 'view_purchase_requisition', 'description' => 'View Permintaan Barang'],
+            ['name' => 'view_purchase_requisition_own', 'description' => 'View Own Permintaan Barang'],
+            ['name' => 'view_purchase_requisition_all', 'description' => 'View All Permintaan Barang'],
             ['name' => 'create_purchase_requisition', 'description' => 'Create Permintaan Barang'],
             ['name' => 'edit_purchase_requisition', 'description' => 'Edit Permintaan Barang'],
             ['name' => 'approve_purchase_requisition', 'description' => 'Approve Permintaan Barang'],
@@ -79,7 +81,7 @@ class RolePermissionSeeder extends Seeder
             'view_master_satuan', 'view_master_barang', 'create_master_barang', 'edit_master_barang',
             'view_resep', 'create_resep', 'edit_resep',
             'view_produksi', 'create_produksi', 'edit_produksi',
-            'view_purchase_requisition', 'create_purchase_requisition',
+            'view_purchase_requisition', 'view_purchase_requisition_own', 'create_purchase_requisition',
         ])->get();
         $staff->permissions()->syncWithoutDetaching($staffPermissions);
 
@@ -91,7 +93,7 @@ class RolePermissionSeeder extends Seeder
 
         // SPV can review and approve submitted purchase requisitions.
         $spvPermissions = Permission::whereIn('name', [
-            'view_purchase_requisition', 'approve_purchase_requisition', 'reject_purchase_requisition',
+            'view_purchase_requisition', 'view_purchase_requisition_all', 'approve_purchase_requisition', 'reject_purchase_requisition',
         ])->get();
         $spv->permissions()->syncWithoutDetaching($spvPermissions);
     }
