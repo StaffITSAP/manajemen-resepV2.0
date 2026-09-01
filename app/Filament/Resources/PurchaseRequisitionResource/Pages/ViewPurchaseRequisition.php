@@ -20,6 +20,12 @@ class ViewPurchaseRequisition extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('printPdf')
+                ->label('Print PDF')
+                ->icon('heroicon-o-printer')
+                ->color('gray')
+                ->url(fn(PurchaseRequisition $record): string => route('purchase-requisitions.print', ['record' => $record]))
+                ->visible(fn(PurchaseRequisition $record): bool => filled($record->approved_at) && blank($record->rejected_at) && $record->status !== 'cancelled'),
             Action::make('edit')
                 ->label('Edit')
                 ->icon('heroicon-o-pencil-square')

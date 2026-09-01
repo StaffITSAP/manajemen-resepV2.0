@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProduksiPrintController;
+use App\Http\Controllers\PurchaseRequisitionPrintController;
 use App\Jobs\SyncAccurateItemsJob;
 use App\Http\Controllers\Accurate\ItemAdjustmentTemplateController;
 
@@ -12,6 +13,9 @@ Route::get('/', function () {
 Route::middleware(['web', 'auth']) // sesuaikan middleware panelmu
     ->get('/admin/produksi/{record}/print', [ProduksiPrintController::class, 'show'])
     ->name('produksi.print');
+Route::middleware(['web', 'auth'])
+    ->get('/admin/purchase-requisitions/{record}/print', [PurchaseRequisitionPrintController::class, 'show'])
+    ->name('purchase-requisitions.print');
 Route::post('/accurate/items/sync', function () {
     SyncAccurateItemsJob::dispatch(); // atau ->dispatchSync() bila mau langsung
     return response()->json(['ok' => true]);

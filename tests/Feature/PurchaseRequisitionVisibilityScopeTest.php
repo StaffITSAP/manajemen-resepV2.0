@@ -212,6 +212,62 @@ class PurchaseRequisitionVisibilityScopeTest extends TestCase
         $this->assertFalse($noScopeUser->can('view', $ownRecord));
     }
 
+    public function test_print_pdf_action_is_only_visible_for_approved_requisition(): void
+    {
+        $owner = $this->userWithPermissions('print-owner', ['view_purchase_requisition_all']);
+        $this->actingAs($owner);
+
+        foreach ([
+            $this->requisition($owner, ['status' => 'draft']),
+            $this->requisition($owner, ['status' => 'submitted']),
+            $this->requisition($owner, ['status' => 'cancelled', 'rejected_at' => now()]),
+        ] as $record) {
+            Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+                ->assertActionHidden('printPdf');
+        }
+
+        $approved = $this->requisition($owner, ['approved_at' => now(), 'approved_by' => $owner->id]);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $approved->getRouteKey()])
+            ->assertActionVisible('printPdf');
+    }
+
+    public function test_print_pdf_endpoint_rejects_unapproved_records_and_returns_pdf_for_approved_record(): void
+    {
+        $owner = $this->userWithPermissions('print-endpoint-owner', ['view_purchase_requisition_all']);
+        $this->actingAs($owner);
+
+        foreach ([
+            $this->requisition($owner, ['status' => 'draft']),
+            $this->requisition($owner, ['status' => 'submitted']),
+            $this->requisition($owner, ['status' => 'cancelled', 'rejected_at' => now()]),
+        ] as $record) {
+            $this->get(route('purchase-requisitions.print', ['record' => $record]))->assertNotFound();
+        }
+
+        $approved = $this->requisition($owner, [
+            'approved_at' => now(),
+            'approved_by' => $owner->id,
+            'sync_status' => 'failed',
+        ]);
+        $approved->items()->create([
+            'item_accurate_id' => 1,
+            'item_no' => '100069',
+            'item_name' => 'Alchemy',
+            'item_unit_accurate_id' => 1,
+            'item_unit_name' => 'grm',
+            'quantity' => 1,
+            'required_date' => '2026-09-01',
+            'latest_purchase_unit_price' => 962,
+            'total_price' => 962,
+        ]);
+
+        $response = $this->get(route('purchase-requisitions.print', ['record' => $approved]));
+
+        $response->assertOk()->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
     public function test_edit_policy_requires_edit_permission_visibility_and_editable_state(): void
     {
         [$ownerA, $ownerB] = $this->owners();

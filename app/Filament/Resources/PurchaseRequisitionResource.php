@@ -306,6 +306,19 @@ class PurchaseRequisitionResource extends Resource
                                 ]),
                         ])
                         ->columnSpanFull(),
+                    Grid::make(['default' => 1, 'md' => 2, 'xl' => 4])
+                        ->schema([
+                            TextEntry::make('estimated_total')
+                                ->label('')
+                                ->state(fn(PurchaseRequisition $record): float => (float) $record->items->sum('total_price'))
+                                ->formatStateUsing(fn(float $state): string => 'Total Nilai : IDR ' . number_format($state, 2, '.', ','))
+                                ->html()
+                                ->extraAttributes([
+                                    'class' => 'mt-4 border-b border-gray-200 pb-2 pt-4 text-right text-base font-bold',
+                                ])
+                                ->columnStart(['xl' => 4]),
+                        ])
+                        ->columnSpanFull(),
                 ]),
         ]);
     }
