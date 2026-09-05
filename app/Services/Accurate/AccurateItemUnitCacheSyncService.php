@@ -17,8 +17,17 @@ class AccurateItemUnitCacheSyncService
     public function __construct(
         private AccurateClient $client,
         private AccurateItemUnitService $unitService,
+        private mixed $costValueService = null,
         private mixed $sleeper = null,
-    ) {}
+    ) {
+        if (! $this->costValueService instanceof AccurateCostValueSyncService) {
+            if ($this->costValueService !== null && $this->sleeper === null) {
+                $this->sleeper = $this->costValueService;
+            }
+
+            $this->costValueService = app(AccurateCostValueSyncService::class);
+        }
+    }
 
     /**
      * Populate accurate_item_units from local accurate_items and Accurate item/detail.do.
@@ -36,6 +45,10 @@ class AccurateItemUnitCacheSyncService
             'units_unchanged' => 0,
             'stale_units_removed' => 0,
             'items_with_no_populated_units' => 0,
+            'cost_values_inserted' => 0,
+            'cost_values_updated' => 0,
+            'cost_values_unchanged' => 0,
+            'stale_cost_values_removed' => 0,
             'skipped_local_items' => 0,
             'failures' => 0,
             'message' => null,
@@ -69,6 +82,10 @@ class AccurateItemUnitCacheSyncService
             'units_unchanged' => 0,
             'stale_units_removed' => 0,
             'items_with_no_populated_units' => 0,
+            'cost_values_inserted' => 0,
+            'cost_values_updated' => 0,
+            'cost_values_unchanged' => 0,
+            'stale_cost_values_removed' => 0,
             'skipped_local_items' => 0,
             'failures' => 0,
             'message' => null,
@@ -133,11 +150,16 @@ class AccurateItemUnitCacheSyncService
 
             $result = $this->reconcileItemUnits($item, $units);
             $this->recordSuccessfulSyncState($item, count($units));
+            $costValueResult = $this->syncCostValues($item, $response, $stats);
 
             $stats['units_inserted'] += $result['inserted'];
             $stats['units_updated'] += $result['updated'];
             $stats['units_unchanged'] += $result['unchanged'];
             $stats['stale_units_removed'] += $result['stale_removed'];
+            $stats['cost_values_inserted'] += $costValueResult['inserted'];
+            $stats['cost_values_updated'] += $costValueResult['updated'];
+            $stats['cost_values_unchanged'] += $costValueResult['unchanged'];
+            $stats['stale_cost_values_removed'] += $costValueResult['stale_removed'];
         }
 
         if ($stats['failures'] > 0) {
@@ -221,6 +243,31 @@ class AccurateItemUnitCacheSyncService
         }
 
         usleep($sleepMs * 1000);
+    }
+
+    private function syncCostValues(AccurateItem $item, array $response, array &$stats): array
+    {
+        if (! Schema::hasTable('purchase_item_cost_values')) {
+            return ['inserted' => 0, 'updated' => 0, 'unchanged' => 0, 'stale_removed' => 0];
+        }
+
+        try {
+            return $this->costValueService->syncFromItemDetailResponse($item, $response);
+        } catch (RuntimeException $e) {
+            $stats['failures']++;
+            $this->logWarning('[AccurateItemUnitCache] cost value refresh failed', [
+                'accurate_item_id' => $item->accurate_id,
+                'message' => $e->getMessage(),
+            ]);
+        } catch (Throwable $e) {
+            $stats['failures']++;
+            $this->logWarning('[AccurateItemUnitCache] unexpected cost value refresh failure', [
+                'accurate_item_id' => $item->accurate_id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        return ['inserted' => 0, 'updated' => 0, 'unchanged' => 0, 'stale_removed' => 0];
     }
 
     /**

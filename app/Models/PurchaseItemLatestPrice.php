@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PurchaseItemLatestPrice extends Model
 {
+    public const SOURCE_TYPE_PI = 'PI';
+    public const SOURCE_TYPE_PO = 'PO';
+    public const SOURCE_TYPE_COST_VALUE = 'COST_VALUE';
+
     protected $table = 'purchase_item_latest_prices';
     protected $guarded = [];
 

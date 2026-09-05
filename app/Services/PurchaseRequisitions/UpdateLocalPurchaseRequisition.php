@@ -4,9 +4,9 @@ namespace App\Services\PurchaseRequisitions;
 
 use App\Models\AccurateItem;
 use App\Models\AccurateItemUnit;
-use App\Models\PurchaseItemLatestPrice;
 use App\Models\PurchaseRequisition;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class UpdateLocalPurchaseRequisition
@@ -111,18 +111,15 @@ class UpdateLocalPurchaseRequisition
             throw ValidationException::withMessages(["{$prefix}.item_unit_accurate_id" => 'Satuan barang belum tersedia di cache lokal.']);
         }
 
-        $latestPrice = PurchaseItemLatestPrice::query()
-            ->where('item_accurate_id', $item->accurate_id)
-            ->where('item_unit_accurate_id', $unitAccurateId)
-            ->first();
+        $latestPrice = app(PurchaseLatestPriceResolver::class)->resolve((int) $item->accurate_id, $unitAccurateId);
 
-        if (! $latestPrice) {
+        if ($latestPrice === null) {
             throw ValidationException::withMessages(["{$prefix}.latest_purchase_unit_price" => 'Harga pembelian terakhir belum tersedia.']);
         }
 
-        $unitPrice = (string) $latestPrice->unit_price;
+        $unitPrice = (string) $latestPrice->price;
 
-        $requisition->items()->create([
+        $snapshot = [
             'accurate_item_id' => $item->id,
             'item_accurate_id' => $item->accurate_id,
             'item_no' => $item->no,
@@ -134,10 +131,24 @@ class UpdateLocalPurchaseRequisition
             'note' => $data['note'] ?? null,
             'latest_purchase_unit_price' => $unitPrice,
             'total_price' => $this->multiplyDecimal($quantity, $unitPrice),
-            'source_purchase_order_accurate_id' => $latestPrice->purchase_order_accurate_id,
-            'source_purchase_order_number' => $latestPrice->purchase_order_number,
-            'source_purchase_order_date' => $latestPrice->purchase_order_date,
-        ]);
+            'source_purchase_order_accurate_id' => $latestPrice->sourceDocumentAccurateId,
+            'source_purchase_order_number' => $latestPrice->sourceDocumentNumber,
+            'source_purchase_order_date' => $latestPrice->sourceDocumentDate,
+        ];
+
+        foreach ([
+            'latest_price_source_type' => $latestPrice->sourceType,
+            'source_document_accurate_id' => $latestPrice->sourceDocumentAccurateId,
+            'source_document_number' => $latestPrice->sourceDocumentNumber,
+            'source_document_date' => $latestPrice->sourceDocumentDate,
+            'source_price_synced_at' => $latestPrice->sourcePriceSyncedAt,
+        ] as $column => $value) {
+            if (Schema::hasColumn('purchase_requisition_items', $column)) {
+                $snapshot[$column] = $value;
+            }
+        }
+
+        $requisition->items()->create($snapshot);
     }
 
     private function snapshot(PurchaseRequisition $record): array

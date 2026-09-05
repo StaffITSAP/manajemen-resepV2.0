@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Accurate\PurchaseOrderLatestPriceSyncService;
+use App\Services\Accurate\PurchaseInvoiceLatestPriceSyncService;
 use InvalidArgumentException;
 use Illuminate\Console\Command;
 use Throwable;
@@ -10,15 +10,15 @@ use Throwable;
 class AccurateSyncPurchaseLatestPrices extends Command
 {
     protected $signature = 'accurate:sync-purchase-latest-prices
-                            {--page=1 : Halaman awal purchase-order/list.do}
-                            {--page-size=10 : Jumlah PO per halaman, maksimum 100}
-                            {--max-pages=1 : Jumlah maksimum halaman yang diproses}
-                            {--max-details= : Jumlah maksimum detail PO yang diambil per invocation, kosong berarti tanpa cap tambahan}
-                            {--sleep-ms=0 : Jeda antar GET purchase-order/detail.do dalam milidetik}';
+                             {--page=1 : Halaman awal purchase-invoice/list.do}
+                             {--page-size=10 : Jumlah Purchase Invoice per halaman, maksimum 100}
+                             {--max-pages= : Jumlah maksimum halaman; kosong berarti full reconciliation}
+                             {--max-details= : Jumlah maksimum detail Invoice yang diambil per invocation, kosong berarti tanpa cap tambahan}
+                             {--sleep-ms=0 : Jeda antar GET purchase-invoice/detail.do dalam milidetik}';
 
-    protected $description = 'Sinkron cache harga beli terakhir dari Approved Purchase Order Accurate.';
+    protected $description = 'Sinkron cache harga beli terakhir dari Approved Purchase Invoice Accurate.';
 
-    public function handle(PurchaseOrderLatestPriceSyncService $service): int
+    public function handle(PurchaseInvoiceLatestPriceSyncService $service): int
     {
         try {
             ['page' => $page, 'page_size' => $pageSize, 'max_pages' => $maxPages, 'max_details' => $maxDetails, 'sleep_ms' => $sleepMs] = $this->validatedOptions();
@@ -37,14 +37,17 @@ class AccurateSyncPurchaseLatestPrices extends Command
             return self::FAILURE;
         }
 
-        $this->line('PO list rows: ' . $result['purchase_orders']);
-        $this->line('PO details fetched: ' . $result['details_fetched']);
+        $this->line('Purchase Invoice list rows: ' . ($result['purchase_invoices'] ?? 0));
+        $this->line('Purchase Invoice details fetched: ' . ($result['details_fetched'] ?? 0));
         $this->line('Lines processed: ' . $result['lines_processed']);
         $this->line('Latest prices inserted: ' . $result['inserted']);
         $this->line('Latest prices updated: ' . $result['updated']);
         $this->line('Unchanged: ' . $result['unchanged']);
         $this->line('Skipped/malformed lines: ' . $result['skipped_malformed']);
         $this->line('Failures: ' . $result['failures']);
+        if (array_key_exists('legacy_deleted', $result)) {
+            $this->line('Legacy cache records deleted: ' . $result['legacy_deleted']);
+        }
 
         if (! ($result['ok'] ?? false)) {
             $this->error($result['message'] ?: 'Sinkron selesai dengan error fatal.');
@@ -72,7 +75,7 @@ class AccurateSyncPurchaseLatestPrices extends Command
         return [
             'page'      => $this->validatePositiveIntegerOption('page', $options['page'] ?? null),
             'page_size' => $this->validatePositiveIntegerOption('page-size', $options['page-size'] ?? null),
-            'max_pages' => $this->validatePositiveIntegerOption('max-pages', $options['max-pages'] ?? null),
+            'max_pages' => blank($options['max-pages'] ?? null) ? null : $this->validatePositiveIntegerOption('max-pages', $options['max-pages']),
             'max_details' => blank($options['max-details'] ?? null)
                 ? null
                 : $this->validatePositiveIntegerOption('max-details', $options['max-details']),

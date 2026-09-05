@@ -9,6 +9,7 @@ use App\Models\PurchaseItemLatestPrice;
 use App\Models\PurchaseRequisition;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class CreateLocalPurchaseRequisition
@@ -70,10 +71,15 @@ class CreateLocalPurchaseRequisition
 
     public function latestPriceFor(int $itemAccurateId, int $unitAccurateId): ?PurchaseItemLatestPrice
     {
-        return PurchaseItemLatestPrice::query()
-            ->where('item_accurate_id', $itemAccurateId)
-            ->where('item_unit_accurate_id', $unitAccurateId)
-            ->first();
+        $resolved = app(PurchaseLatestPriceResolver::class)->resolve($itemAccurateId, $unitAccurateId);
+
+        return $resolved?->sourceType === PurchaseItemLatestPrice::SOURCE_TYPE_PI
+            ? PurchaseItemLatestPrice::query()
+                ->where('item_accurate_id', $itemAccurateId)
+                ->where('item_unit_accurate_id', $unitAccurateId)
+                ->where('source_type', PurchaseItemLatestPrice::SOURCE_TYPE_PI)
+                ->first()
+            : null;
     }
 
     private function createItem(PurchaseRequisition $requisition, array $data, int $index): void
@@ -119,17 +125,17 @@ class CreateLocalPurchaseRequisition
             ]);
         }
 
-        $latestPrice = $this->latestPriceFor((int) $item->accurate_id, $unitAccurateId);
-        if (! $latestPrice) {
+        $latestPrice = app(PurchaseLatestPriceResolver::class)->resolve((int) $item->accurate_id, $unitAccurateId);
+        if ($latestPrice === null) {
             throw ValidationException::withMessages([
                 "{$prefix}.latest_purchase_unit_price" => 'Harga pembelian terakhir belum tersedia.',
             ]);
         }
 
-        $unitPrice = (string) $latestPrice->unit_price;
+        $unitPrice = (string) $latestPrice->price;
         $totalPrice = $this->multiplyDecimal($quantity, $unitPrice);
 
-        $requisition->items()->create([
+        $snapshot = [
             'accurate_item_id' => $item->id,
             'item_accurate_id' => $item->accurate_id,
             'item_no' => $item->no,
@@ -141,10 +147,24 @@ class CreateLocalPurchaseRequisition
             'note' => $data['note'] ?? null,
             'latest_purchase_unit_price' => $unitPrice,
             'total_price' => $totalPrice,
-            'source_purchase_order_accurate_id' => $latestPrice->purchase_order_accurate_id,
-            'source_purchase_order_number' => $latestPrice->purchase_order_number,
-            'source_purchase_order_date' => $latestPrice->purchase_order_date,
-        ]);
+            'source_purchase_order_accurate_id' => $latestPrice->sourceDocumentAccurateId,
+            'source_purchase_order_number' => $latestPrice->sourceDocumentNumber,
+            'source_purchase_order_date' => $latestPrice->sourceDocumentDate,
+        ];
+
+        foreach ([
+            'latest_price_source_type' => $latestPrice->sourceType,
+            'source_document_accurate_id' => $latestPrice->sourceDocumentAccurateId,
+            'source_document_number' => $latestPrice->sourceDocumentNumber,
+            'source_document_date' => $latestPrice->sourceDocumentDate,
+            'source_price_synced_at' => $latestPrice->sourcePriceSyncedAt,
+        ] as $column => $value) {
+            if (Schema::hasColumn('purchase_requisition_items', $column)) {
+                $snapshot[$column] = $value;
+            }
+        }
+
+        $requisition->items()->create($snapshot);
     }
 
     private function multiplyDecimal(string $quantity, string $unitPrice): string

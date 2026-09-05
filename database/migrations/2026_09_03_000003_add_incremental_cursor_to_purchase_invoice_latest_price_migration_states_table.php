@@ -1,0 +1,8 @@
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration {
+    public function up(): void { Schema::table('purchase_invoice_latest_price_migration_states', function (Blueprint $table) { $table->unsignedInteger('incremental_page')->default(1)->after('current_row_index'); $table->unsignedInteger('incremental_row_index')->default(0)->after('incremental_page'); }); }
+    public function down(): void { Schema::table('purchase_invoice_latest_price_migration_states', function (Blueprint $table) { $table->dropColumn(['incremental_page', 'incremental_row_index']); }); }
+};

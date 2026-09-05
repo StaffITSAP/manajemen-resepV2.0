@@ -6,10 +6,10 @@ use App\Filament\Resources\PurchaseRequisitionResource\Pages;
 use App\Models\AccurateBranch;
 use App\Models\AccurateItem;
 use App\Models\AccurateItemUnit;
-use App\Models\PurchaseItemLatestPrice;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
 use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
+use App\Services\PurchaseRequisitions\PurchaseLatestPriceResolver;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists\Components\Grid;
@@ -132,6 +132,7 @@ class PurchaseRequisitionResource extends Resource
 
                             Forms\Components\DatePicker::make('required_date')
                                 ->label('Tanggal Diminta')
+                                ->default(fn(Forms\Get $get) => $get('../../trans_date'))
                                 ->required()
                                 ->native(false)
                                 ->displayFormat('d/m/Y')
@@ -301,8 +302,9 @@ class PurchaseRequisitionResource extends Resource
                                     TextEntry::make('note')->label('Keterangan')->placeholder('-'),
                                     TextEntry::make('latest_purchase_unit_price')->label('Harga Satuan')->money('IDR', true),
                                     TextEntry::make('total_price')->label('Harga Total')->money('IDR', true),
-                                    TextEntry::make('source_purchase_order_number')->label('Source PO')->placeholder('-'),
-                                    TextEntry::make('source_purchase_order_date')->label('Tanggal PO')->date('d/m/Y')->placeholder('-'),
+                                    TextEntry::make('latest_price_source_type')->label('Sumber Harga')->placeholder('-'),
+                                    TextEntry::make('source_document_number')->label('Dokumen Sumber')->placeholder('-'),
+                                    TextEntry::make('source_document_date')->label('Tanggal Dokumen')->date('d/m/Y')->placeholder('-'),
                                 ]),
                         ])
                         ->columnSpanFull(),
@@ -418,16 +420,13 @@ class PurchaseRequisitionResource extends Resource
             return;
         }
 
-        $latestPrice = PurchaseItemLatestPrice::query()
-            ->where('item_accurate_id', $item->accurate_id)
-            ->where('item_unit_accurate_id', $unitId)
-            ->first();
+        $latestPrice = app(PurchaseLatestPriceResolver::class)->resolve((int) $item->accurate_id, $unitId);
 
-        if (! $latestPrice) {
+        if ($latestPrice === null) {
             return;
         }
 
-        $unitPrice = (string) $latestPrice->unit_price;
+        $unitPrice = (string) $latestPrice->price;
         $totalPrice = is_numeric($quantity) && (float) $quantity > 0
             ? number_format(((float) $quantity) * ((float) $unitPrice), 8, '.', '')
             : null;

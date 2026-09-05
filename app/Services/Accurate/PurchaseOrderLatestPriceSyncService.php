@@ -2,12 +2,9 @@
 
 namespace App\Services\Accurate;
 
-use App\Models\AccurateItem;
 use App\Models\AccuratePurchaseOrderSyncState;
-use App\Models\PurchaseItemLatestPrice;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -127,11 +124,7 @@ class PurchaseOrderLatestPriceSyncService
                 $stats['details_fetched']++;
                 $stats['skipped_malformed'] += $inspection['skipped_malformed'];
 
-                foreach ($inspection['candidates'] as $candidate) {
-                    $stats['lines_processed']++;
-                    $result = $this->storeCandidate($candidate);
-                    $stats[$result]++;
-                }
+                $stats['lines_processed'] += count($inspection['candidates']);
 
                 $this->recordSuccessfulSyncState($detail, $row);
             }
@@ -385,7 +378,7 @@ class PurchaseOrderLatestPriceSyncService
         ];
     }
 
-    public function candidateIsNewerThanExisting(array $candidate, ?PurchaseItemLatestPrice $existing): bool
+    public function candidateIsNewerThanExisting(array $candidate, mixed $existing): bool
     {
         if ($existing === null) {
             return true;
@@ -446,48 +439,6 @@ class PurchaseOrderLatestPriceSyncService
         usleep($sleepMs * 1000);
     }
 
-    private function storeCandidate(array $candidate): string
-    {
-        return DB::transaction(function () use ($candidate) {
-            $existing = PurchaseItemLatestPrice::query()
-                ->where('item_accurate_id', $candidate['item_accurate_id'])
-                ->where('item_unit_accurate_id', $candidate['item_unit_accurate_id'])
-                ->lockForUpdate()
-                ->first();
-
-            if (! $this->candidateIsNewerThanExisting($candidate, $existing)) {
-                return 'unchanged';
-            }
-
-            $localItemId = AccurateItem::query()
-                ->where('accurate_id', $candidate['item_accurate_id'])
-                ->value('id');
-
-            $data = [
-                'accurate_item_id'           => $localItemId,
-                'item_accurate_id'           => $candidate['item_accurate_id'],
-                'item_no'                    => $candidate['item_no'],
-                'item_name'                  => $candidate['item_name'],
-                'item_unit_accurate_id'      => $candidate['item_unit_accurate_id'],
-                'item_unit_name'             => $candidate['item_unit_name'],
-                'unit_price'                 => $candidate['unit_price'],
-                'purchase_order_accurate_id' => $candidate['purchase_order_accurate_id'],
-                'purchase_order_number'      => $candidate['purchase_order_number'],
-                'purchase_order_date'        => $candidate['purchase_order_date'],
-                'purchase_order_detail_id'   => $candidate['purchase_order_detail_id'],
-                'source_updated_at'          => $candidate['source_updated_at'],
-                'synced_at'                  => now(),
-            ];
-
-            if ($existing) {
-                $existing->update($data);
-                return 'updated';
-            }
-
-            PurchaseItemLatestPrice::create($data);
-            return 'inserted';
-        });
-    }
 
     private function purchaseOrderAlreadyProcessed(int $poId): bool
     {
@@ -531,11 +482,7 @@ class PurchaseOrderLatestPriceSyncService
         $stats['details_fetched']++;
         $stats['skipped_malformed'] += $inspection['skipped_malformed'];
 
-        foreach ($inspection['candidates'] as $candidate) {
-            $stats['lines_processed']++;
-            $result = $this->storeCandidate($candidate);
-            $stats[$result]++;
-        }
+        $stats['lines_processed'] += count($inspection['candidates']);
 
         $this->recordSuccessfulSyncState($detail, $row);
     }

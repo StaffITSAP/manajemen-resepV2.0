@@ -187,6 +187,18 @@ class AccurateClient
         return $this->get('purchase-order/detail.do', ['id' => $id]);
     }
 
+    /** Daftar Purchase Invoice (read-only). */
+    public function listPurchaseInvoices(array $params = []): array
+    {
+        return $this->get('purchase-invoice/list.do', $params);
+    }
+
+    /** Detail Purchase Invoice (read-only). */
+    public function detailPurchaseInvoice(int|string $id): array
+    {
+        return $this->get('purchase-invoice/detail.do', ['id' => $id]);
+    }
+
     /**
      * Simpan Item Adjustment
      * Endpoint: item-adjustment/save.do

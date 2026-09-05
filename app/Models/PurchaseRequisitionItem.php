@@ -16,6 +16,8 @@ class PurchaseRequisitionItem extends Model
         'latest_purchase_unit_price' => 'decimal:8',
         'total_price'                => 'decimal:8',
         'source_purchase_order_date' => 'date',
+        'source_document_date'       => 'date',
+        'source_price_synced_at'     => 'datetime',
     ];
 
     public function purchaseRequisition(): BelongsTo

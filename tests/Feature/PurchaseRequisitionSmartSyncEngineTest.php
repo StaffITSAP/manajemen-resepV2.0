@@ -7,9 +7,11 @@ use App\Jobs\PurchaseRequisitions\SyncPurchaseRequisitionPurchaseOrdersBatch;
 use App\Models\AccurateItem;
 use App\Models\AccurateItemUnitSyncState;
 use App\Models\AccuratePurchaseOrderSyncState;
+use App\Models\PurchaseInvoiceLatestPriceMigrationState;
 use App\Services\Accurate\AccurateClient;
 use App\Services\Accurate\AccurateItemUnitCacheSyncService;
 use App\Services\Accurate\AccurateItemUnitService;
+use App\Services\Accurate\PurchaseInvoiceLatestPriceSyncService;
 use App\Services\Accurate\PurchaseOrderLatestPriceSyncService;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
 use Carbon\Carbon;
@@ -30,6 +32,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         Carbon::setTestNow('2026-08-26 12:00:00');
 
         Schema::dropIfExists('accurate_purchase_order_sync_states');
+        Schema::dropIfExists('purchase_invoice_latest_price_migration_states');
         Schema::dropIfExists('purchase_item_latest_prices');
         Schema::dropIfExists('accurate_item_unit_sync_states');
         Schema::dropIfExists('accurate_item_units');
@@ -82,6 +85,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
             $table->string('purchase_order_number')->nullable();
             $table->date('purchase_order_date')->nullable();
             $table->unsignedBigInteger('purchase_order_detail_id')->nullable();
+            $table->string('source_type', 20)->nullable()->index();
             $table->timestamp('source_updated_at')->nullable();
             $table->timestamp('synced_at')->nullable();
             $table->timestamps();
@@ -96,6 +100,22 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
             $table->timestamp('last_synced_at')->nullable();
             $table->timestamps();
         });
+
+        Schema::create('purchase_invoice_latest_price_migration_states', function (Blueprint $table): void {
+            $table->id();
+            $table->string('status')->default('not_completed')->index();
+            $table->string('run_id')->nullable()->unique();
+            $table->unsignedInteger('current_page')->default(1);
+            $table->unsignedInteger('current_row_index')->default(0);
+            $table->unsignedInteger('incremental_page')->default(1);
+            $table->unsignedInteger('incremental_row_index')->default(0);
+            $table->date('incremental_run_upper_trans_date')->nullable();
+            $table->date('incremental_completed_upper_trans_date')->nullable();
+            $table->json('candidates')->nullable();
+            $table->text('error_message')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
@@ -105,6 +125,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         Cache::forget(PurchaseRequisitionSmartSync::STATUS_KEY);
 
         Schema::dropIfExists('accurate_purchase_order_sync_states');
+        Schema::dropIfExists('purchase_invoice_latest_price_migration_states');
         Schema::dropIfExists('purchase_item_latest_prices');
         Schema::dropIfExists('accurate_item_unit_sync_states');
         Schema::dropIfExists('accurate_item_units');
@@ -571,26 +592,26 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         $this->assertTrue($lock->get());
         $owner = $lock->owner();
 
-        $poService = Mockery::mock(PurchaseOrderLatestPriceSyncService::class);
-        $poService->shouldReceive('syncSmartUnprocessedPurchaseOrderBatch')
+        $piService = Mockery::mock(PurchaseInvoiceLatestPriceSyncService::class);
+        $piService->shouldReceive('syncSmartUnprocessedPurchaseInvoiceBatch')
             ->once()
-            ->with(1, 100, 50, 500, [])
-            ->andReturn(['stage_complete' => false, 'next_page' => 1, 'attempted_purchase_order_ids' => [1, 2]]);
+            ->with(1, 100, 50, 500, [], PurchaseInvoiceLatestPriceSyncService::SCAN_MODE_QUICK, false, 0, null, null)
+            ->andReturn(['stage_complete' => false, 'next_page' => 1, 'attempted_purchase_invoice_ids' => [1, 2]]);
 
-        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 1))->handle($poService);
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 1))->handle($piService);
 
         Queue::assertPushed(SyncPurchaseRequisitionPurchaseOrdersBatch::class, function ($job): bool {
             return $job->page === 1
-                && $job->attemptedPurchaseOrderIds === [1, 2]
+                && $job->attemptedPurchaseInvoiceIds === [1, 2]
                 && $this->hasSmartSyncQueueIsolation($job)
                 && $this->hasTenSecondDelay($job);
         });
 
         Queue::fake();
-        $completeService = Mockery::mock(PurchaseOrderLatestPriceSyncService::class);
-        $completeService->shouldReceive('syncSmartUnprocessedPurchaseOrderBatch')
+        $completeService = Mockery::mock(PurchaseInvoiceLatestPriceSyncService::class);
+        $completeService->shouldReceive('syncSmartUnprocessedPurchaseInvoiceBatch')
             ->once()
-            ->with(2, 100, 50, 500, [])
+            ->with(2, 100, 50, 500, [], PurchaseInvoiceLatestPriceSyncService::SCAN_MODE_QUICK, false, 0, null, null)
             ->andReturn(['stage_complete' => true]);
 
         (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 2))->handle($completeService);
@@ -617,9 +638,9 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         $itemService->shouldNotReceive('syncSmartMissingStateBatch');
         (new SyncPurchaseRequisitionItemUnitsBatch($oldOwner))->handle($itemService);
 
-        $poService = Mockery::mock(PurchaseOrderLatestPriceSyncService::class);
-        $poService->shouldNotReceive('syncSmartUnprocessedPurchaseOrderBatch');
-        (new SyncPurchaseRequisitionPurchaseOrdersBatch($oldOwner, 1))->handle($poService);
+        $piService = Mockery::mock(PurchaseInvoiceLatestPriceSyncService::class);
+        $piService->shouldNotReceive('syncSmartUnprocessedPurchaseInvoiceBatch');
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($oldOwner, 1))->handle($piService);
 
         $restoredNewLock = Cache::restoreLock(PurchaseRequisitionSmartSync::LOCK_KEY, $newOwner);
         $this->assertTrue($restoredNewLock->isOwnedByCurrentProcess());

@@ -5,6 +5,8 @@ namespace App\Services\PurchaseRequisitions\SmartSync;
 use App\Jobs\PurchaseRequisitions\SyncPurchaseRequisitionItemUnitsBatch;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Support\Facades\Cache;
+use App\Models\PurchaseInvoiceLatestPriceMigrationState;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -37,6 +39,13 @@ class PurchaseRequisitionSmartSync
 
         $owner = $lock->owner();
         static::markRunning($owner);
+        $state = PurchaseInvoiceLatestPriceMigrationState::query()->latest('id')->first();
+        if (! $state) {
+            PurchaseInvoiceLatestPriceMigrationState::query()->updateOrCreate(
+                ['id' => $state?->id],
+                ['status' => 'running', 'run_id' => (string) Str::uuid(), 'current_page' => 1, 'candidates' => [], 'error_message' => null, 'completed_at' => null],
+            );
+        } elseif (blank($state->completed_at)) { $state->update(['status'=>'running','error_message'=>null]); } else { $state->update(['status'=>'incremental_running','error_message'=>null]); }
 
         try {
             SyncPurchaseRequisitionItemUnitsBatch::dispatch($owner);

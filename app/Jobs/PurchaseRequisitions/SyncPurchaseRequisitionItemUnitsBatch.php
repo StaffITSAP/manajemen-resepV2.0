@@ -4,6 +4,7 @@ namespace App\Jobs\PurchaseRequisitions;
 
 use App\Services\Accurate\AccurateItemUnitCacheSyncService;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
+use App\Models\PurchaseInvoiceLatestPriceMigrationState;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -38,7 +39,9 @@ class SyncPurchaseRequisitionItemUnitsBatch implements ShouldQueue
         );
 
         if ($result['stage_complete'] ?? false) {
-            SyncPurchaseRequisitionPurchaseOrdersBatch::dispatch($this->lockOwner, 1)
+            $state = PurchaseInvoiceLatestPriceMigrationState::query()->latest('id')->first();
+            $page = $state && blank($state->completed_at) ? (int) $state->current_page : (int) ($state->incremental_page ?? 1);
+            SyncPurchaseRequisitionPurchaseOrdersBatch::dispatch($this->lockOwner, max(1, $page))
                 ->delay(now()->addSeconds(PurchaseRequisitionSmartSync::INTER_BATCH_DELAY_SECONDS));
 
             return;

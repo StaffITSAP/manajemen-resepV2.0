@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use App\Console\Commands\AccurateSyncPurchaseLatestPrices;
-use App\Services\Accurate\PurchaseOrderLatestPriceSyncService;
+use App\Services\Accurate\PurchaseInvoiceLatestPriceSyncService;
 use PHPUnit\Framework\TestCase;
 
 class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
@@ -15,7 +15,7 @@ class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
             'page-size' => '10',
             'max-pages' => '1',
         ]);
-        $service = new FakePurchaseOrderLatestPriceSyncService();
+        $service = new FakePurchaseInvoiceLatestPriceSyncService();
 
         $result = $command->handle($service);
 
@@ -31,7 +31,7 @@ class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
             'page-size' => '10',
             'max-pages' => '1',
         ]);
-        $service = new FakePurchaseOrderLatestPriceSyncService();
+        $service = new FakePurchaseInvoiceLatestPriceSyncService();
 
         $result = $command->handle($service);
 
@@ -48,7 +48,7 @@ class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
             'max-pages' => '1',
         ]);
 
-        $result = $command->handle(new FakePurchaseOrderLatestPriceSyncService());
+        $result = $command->handle(new FakePurchaseInvoiceLatestPriceSyncService());
 
         $this->assertSame(1, $result);
         $this->assertStringContainsString('--page', implode("\n", $command->errors));
@@ -62,7 +62,7 @@ class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
             'max-pages' => '1',
         ]);
 
-        $result = $command->handle(new FakePurchaseOrderLatestPriceSyncService());
+        $result = $command->handle(new FakePurchaseInvoiceLatestPriceSyncService());
 
         $this->assertSame(1, $result);
         $this->assertStringContainsString('--page', implode("\n", $command->errors));
@@ -76,7 +76,7 @@ class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
             'max-pages' => '1',
         ]);
 
-        $result = $command->handle(new FakePurchaseOrderLatestPriceSyncService());
+        $result = $command->handle(new FakePurchaseInvoiceLatestPriceSyncService());
 
         $this->assertSame(1, $result);
         $this->assertStringContainsString('--page-size', implode("\n", $command->errors));
@@ -90,7 +90,7 @@ class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
             'max-pages' => '0',
         ]);
 
-        $result = $command->handle(new FakePurchaseOrderLatestPriceSyncService());
+        $result = $command->handle(new FakePurchaseInvoiceLatestPriceSyncService());
 
         $this->assertSame(1, $result);
         $this->assertStringContainsString('--max-pages', implode("\n", $command->errors));
@@ -103,7 +103,7 @@ class AccurateSyncPurchaseLatestPricesCommandTest extends TestCase
             'page-size' => '10',
             'max-pages' => '1',
         ]);
-        $service = new FakePurchaseOrderLatestPriceSyncService();
+        $service = new FakePurchaseInvoiceLatestPriceSyncService();
 
         $command->handle($service);
 
@@ -142,7 +142,7 @@ class TestableAccurateSyncPurchaseLatestPricesCommand extends AccurateSyncPurcha
     }
 }
 
-class FakePurchaseOrderLatestPriceSyncService extends PurchaseOrderLatestPriceSyncService
+class FakePurchaseInvoiceLatestPriceSyncService extends PurchaseInvoiceLatestPriceSyncService
 {
     public array $lastArgs = [];
     public array $lastBatchArgs = [];
@@ -151,14 +151,14 @@ class FakePurchaseOrderLatestPriceSyncService extends PurchaseOrderLatestPriceSy
     {
     }
 
-    public function sync(int $page = 1, int $pageSize = 10, ?int $maxPages = 1, ?int $maxDetails = null, int $sleepMs = 0): array
+    public function sync(int $page = 1, int $pageSize = 10, ?int $maxPages = 1, ?int $maxDetails = null, int $sleepMs = 0, bool $stageOnly = false, int $startRowIndex = 0, ?string $incrementalRunUpperTransDate = null, ?string $incrementalCompletedUpperTransDate = null): array
     {
         $this->lastArgs = [$page, $pageSize, $maxPages];
         $this->lastBatchArgs = [$maxDetails, $sleepMs];
 
         return [
             'ok' => true,
-            'purchase_orders' => min($pageSize, 10),
+            'purchase_invoices' => min($pageSize, 10),
             'details_fetched' => 0,
             'lines_processed' => 0,
             'inserted' => 0,

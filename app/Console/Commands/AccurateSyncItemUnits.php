@@ -43,6 +43,10 @@ class AccurateSyncItemUnits extends Command
         $this->line('Units updated: ' . $result['units_updated']);
         $this->line('Units unchanged: ' . $result['units_unchanged']);
         $this->line('Stale units removed: ' . $result['stale_units_removed']);
+        $this->line('Cost Values inserted: ' . ($result['cost_values_inserted'] ?? 0));
+        $this->line('Cost Values updated: ' . ($result['cost_values_updated'] ?? 0));
+        $this->line('Cost Values unchanged: ' . ($result['cost_values_unchanged'] ?? 0));
+        $this->line('Stale Cost Values removed: ' . ($result['stale_cost_values_removed'] ?? 0));
         $this->line('Items with no populated units: ' . $result['items_with_no_populated_units']);
         $this->line('Skipped local items: ' . $result['skipped_local_items']);
         $this->line('Failures: ' . $result['failures']);

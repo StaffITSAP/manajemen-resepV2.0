@@ -74,6 +74,7 @@ class SmartSyncStateFoundationTest extends TestCase
             $table->string('purchase_order_number')->nullable();
             $table->date('purchase_order_date')->nullable();
             $table->unsignedBigInteger('purchase_order_detail_id')->nullable();
+            $table->string('source_type', 20)->nullable()->index();
             $table->timestamp('source_updated_at')->nullable();
             $table->timestamp('synced_at')->nullable();
             $table->timestamps();
@@ -168,7 +169,7 @@ class SmartSyncStateFoundationTest extends TestCase
         $this->assertSame(2, AccurateItemUnit::count());
     }
 
-    public function test_successfully_processed_purchase_order_writes_processed_state_and_latest_price_provenance(): void
+    public function test_successfully_processed_purchase_order_writes_processed_state_without_latest_price_provenance(): void
     {
         $this->createItem(790, '100069', 'Alchemy 200gr');
         $this->purchaseOrderService([
@@ -183,14 +184,7 @@ class SmartSyncStateFoundationTest extends TestCase
         $state = AccuratePurchaseOrderSyncState::where('purchase_order_accurate_id', 1001)->firstOrFail();
         $this->assertSame('PO.001', $state->purchase_order_number);
         $this->assertSame('2026-08-20', $state->purchase_order_date->format('Y-m-d'));
-        $this->assertSame(2, PurchaseItemLatestPrice::where('item_accurate_id', 790)->count());
-        $this->assertDatabaseHas('purchase_item_latest_prices', [
-            'item_accurate_id' => 790,
-            'item_unit_accurate_id' => 50,
-            'purchase_order_accurate_id' => 1001,
-            'purchase_order_number' => 'PO.001',
-            'purchase_order_detail_id' => 5001,
-        ]);
+        $this->assertSame(0, PurchaseItemLatestPrice::where('item_accurate_id', 790)->count());
     }
 
     public function test_failed_purchase_order_detail_does_not_mark_processed(): void
