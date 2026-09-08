@@ -11,6 +11,9 @@ return [
     'sync_per_loop'   => env('ACCURATE_SYNC_PER_LOOP', 20),
     'delay_per_loop'  => env('ACCURATE_DELAY_PER_LOOP', 1),
     'sync_latest_limit' => env('ACCURATE_SYNC_LATEST_LIMIT', 15),
+    'purchase_requisition_cost_value_full_refresh_hours' => (int) env('PURCHASE_REQUISITION_COST_VALUE_FULL_REFRESH_HOURS', 24),
+    'purchase_requisition_smart_sync_detail_sleep_ms' => (int) env('PURCHASE_REQUISITION_SMART_SYNC_DETAIL_SLEEP_MS', 500),
+    'purchase_requisition_smart_sync_inter_batch_delay_seconds' => (int) env('PURCHASE_REQUISITION_SMART_SYNC_INTER_BATCH_DELAY_SECONDS', 10),
     // timeout total per request
     'timeout'    => env('ACCURATE_TIMEOUT', 120),
     // SSL

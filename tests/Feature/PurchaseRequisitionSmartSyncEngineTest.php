@@ -154,12 +154,18 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
 
     public function test_smart_sync_queue_runtime_configuration_is_dedicated_and_safe(): void
     {
+        config([
+            'accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 500,
+            'accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => 10,
+        ]);
         $itemJob = new SyncPurchaseRequisitionItemUnitsBatch('owner-1');
         $poJob = new SyncPurchaseRequisitionPurchaseOrdersBatch('owner-1');
 
         $this->assertSame(50, PurchaseRequisitionSmartSync::BATCH_SIZE);
         $this->assertSame(500, PurchaseRequisitionSmartSync::REQUEST_DELAY_MS);
+        $this->assertSame(500, PurchaseRequisitionSmartSync::detailSleepMs());
         $this->assertSame(10, PurchaseRequisitionSmartSync::INTER_BATCH_DELAY_SECONDS);
+        $this->assertSame(10, PurchaseRequisitionSmartSync::interBatchDelaySeconds());
 
         $this->assertSame('sync', config('queue.default'));
         $this->assertSame(90, config('queue.connections.database.retry_after'));
@@ -185,6 +191,45 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
             $this->assertTrue($job->failOnTimeout);
             $this->assertGreaterThan($job->timeout, config('queue.connections.purchase_requisition_sync.retry_after'));
         }
+    }
+
+    public function test_smart_sync_detail_sleep_uses_configured_value_without_changing_batch_size_or_inter_batch_delay(): void
+    {
+        config([
+            'accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 250,
+            'accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => 10,
+        ]);
+
+        $this->assertSame(250, PurchaseRequisitionSmartSync::detailSleepMs());
+        $this->assertSame(10, PurchaseRequisitionSmartSync::interBatchDelaySeconds());
+        $this->assertSame(50, PurchaseRequisitionSmartSync::BATCH_SIZE);
+        $this->assertSame(10, PurchaseRequisitionSmartSync::INTER_BATCH_DELAY_SECONDS);
+    }
+
+    public function test_smart_sync_inter_batch_delay_uses_configured_value_without_changing_batch_size_or_detail_sleep(): void
+    {
+        config([
+            'accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 250,
+            'accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => 2,
+        ]);
+
+        $this->assertSame(2, PurchaseRequisitionSmartSync::interBatchDelaySeconds());
+        $this->assertSame(250, PurchaseRequisitionSmartSync::detailSleepMs());
+        $this->assertSame(50, PurchaseRequisitionSmartSync::BATCH_SIZE);
+    }
+
+    public function test_invalid_negative_smart_sync_detail_sleep_is_clamped_to_zero(): void
+    {
+        config(['accurate.purchase_requisition_smart_sync_detail_sleep_ms' => -250]);
+
+        $this->assertSame(0, PurchaseRequisitionSmartSync::detailSleepMs());
+    }
+
+    public function test_invalid_negative_smart_sync_inter_batch_delay_is_clamped_to_zero(): void
+    {
+        config(['accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => -2]);
+
+        $this->assertSame(0, PurchaseRequisitionSmartSync::interBatchDelaySeconds());
     }
 
     public function test_start_releases_lock_when_initial_dispatch_fails(): void
@@ -283,6 +328,10 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
     public function test_item_job_chains_next_item_batch_or_purchase_order_stage_with_ten_second_delay(): void
     {
         Queue::fake();
+        config([
+            'accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 500,
+            'accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => 10,
+        ]);
 
         $lock = Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 21600);
         $this->assertTrue($lock->get());
@@ -300,7 +349,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
             return $job->lockOwner === $owner
                 && $job->afterItemAccurateId === 50
                 && $this->hasSmartSyncQueueIsolation($job)
-                && $this->hasTenSecondDelay($job);
+                && $this->hasInterBatchDelay($job, 10);
         });
 
         Queue::fake();
@@ -316,8 +365,51 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
             return $job->lockOwner === $owner
                 && $job->page === 1
                 && $this->hasSmartSyncQueueIsolation($job)
-                && $this->hasTenSecondDelay($job);
+                && $this->hasInterBatchDelay($job, 10);
         });
+    }
+
+    public function test_configured_inter_batch_delay_is_used_by_item_stage_chaining(): void
+    {
+        Queue::fake();
+        config([
+            'accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 500,
+            'accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => 2,
+        ]);
+
+        $lock = Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 21600);
+        $this->assertTrue($lock->get());
+        $owner = $lock->owner();
+
+        $itemService = Mockery::mock(AccurateItemUnitCacheSyncService::class);
+        $itemService->shouldReceive('syncSmartMissingStateBatch')
+            ->once()
+            ->with(50, 500, null)
+            ->andReturn(['stage_complete' => false, 'next_item_accurate_id' => 50]);
+
+        (new SyncPurchaseRequisitionItemUnitsBatch($owner))->handle($itemService);
+
+        Queue::assertPushed(SyncPurchaseRequisitionItemUnitsBatch::class, function ($job): bool {
+            return $this->hasInterBatchDelay($job, 2);
+        });
+    }
+
+    public function test_configured_detail_sleep_is_passed_to_item_stage(): void
+    {
+        Queue::fake();
+        config(['accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 250]);
+
+        $lock = Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 21600);
+        $this->assertTrue($lock->get());
+        $owner = $lock->owner();
+
+        $itemService = Mockery::mock(AccurateItemUnitCacheSyncService::class);
+        $itemService->shouldReceive('syncSmartMissingStateBatch')
+            ->once()
+            ->with(50, 250, null)
+            ->andReturn(['stage_complete' => true]);
+
+        (new SyncPurchaseRequisitionItemUnitsBatch($owner))->handle($itemService);
     }
 
     public function test_purchase_order_smart_batch_details_max_fifty_unknown_and_skips_known_processed_ids(): void
@@ -587,6 +679,10 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
     public function test_purchase_order_stage_chains_with_delay_and_final_stage_releases_lock(): void
     {
         Queue::fake();
+        config([
+            'accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 500,
+            'accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => 10,
+        ]);
 
         $lock = Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 21600);
         $this->assertTrue($lock->get());
@@ -604,7 +700,7 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
             return $job->page === 1
                 && $job->attemptedPurchaseInvoiceIds === [1, 2]
                 && $this->hasSmartSyncQueueIsolation($job)
-                && $this->hasTenSecondDelay($job);
+                && $this->hasInterBatchDelay($job, 10);
         });
 
         Queue::fake();
@@ -619,6 +715,51 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         Queue::assertNothingPushed();
         $this->assertTrue(Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 1)->get());
         $this->assertFalse(app(PurchaseRequisitionSmartSync::class)->isRunning());
+    }
+
+    public function test_configured_inter_batch_delay_is_used_by_pi_stage_chaining(): void
+    {
+        Queue::fake();
+        config([
+            'accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 500,
+            'accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds' => 2,
+        ]);
+
+        $lock = Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 21600);
+        $this->assertTrue($lock->get());
+        $owner = $lock->owner();
+
+        $piService = Mockery::mock(PurchaseInvoiceLatestPriceSyncService::class);
+        $piService->shouldReceive('syncSmartUnprocessedPurchaseInvoiceBatch')
+            ->once()
+            ->with(1, 100, 50, 500, [], PurchaseInvoiceLatestPriceSyncService::SCAN_MODE_QUICK, false, 0, null, null)
+            ->andReturn(['stage_complete' => false, 'next_page' => 1, 'attempted_purchase_invoice_ids' => [1, 2]]);
+
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 1))->handle($piService);
+
+        Queue::assertPushed(SyncPurchaseRequisitionPurchaseOrdersBatch::class, function ($job): bool {
+            return $this->hasInterBatchDelay($job, 2);
+        });
+    }
+
+    public function test_configured_detail_sleep_is_passed_to_pi_stage(): void
+    {
+        Queue::fake();
+        config(['accurate.purchase_requisition_smart_sync_detail_sleep_ms' => 250]);
+
+        $lock = Cache::lock(PurchaseRequisitionSmartSync::LOCK_KEY, 21600);
+        $this->assertTrue($lock->get());
+        $owner = $lock->owner();
+
+        $piService = Mockery::mock(PurchaseInvoiceLatestPriceSyncService::class);
+        $piService->shouldReceive('syncSmartUnprocessedPurchaseInvoiceBatch')
+            ->once()
+            ->with(1, 100, 50, 250, [], PurchaseInvoiceLatestPriceSyncService::SCAN_MODE_QUICK, false, 0, null, null)
+            ->andReturn(['stage_complete' => true]);
+
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 1))->handle($piService);
+
+        Queue::assertNothingPushed();
     }
 
     public function test_stale_jobs_do_not_perform_work_or_release_another_workflow_lock(): void
@@ -725,15 +866,15 @@ class PurchaseRequisitionSmartSyncEngineTest extends TestCase
         ]);
     }
 
-    private function hasTenSecondDelay(object $job): bool
+    private function hasInterBatchDelay(object $job, int $seconds): bool
     {
         $delay = $job->delay ?? null;
 
         if ($delay instanceof \DateTimeInterface) {
-            return $delay->getTimestamp() >= now()->addSeconds(9)->getTimestamp();
+            return $delay->getTimestamp() >= now()->addSeconds(max(0, $seconds - 1))->getTimestamp();
         }
 
-        return (int) $delay >= 10;
+        return (int) $delay >= $seconds;
     }
 
     private function hasSmartSyncQueueIsolation(object $job): bool

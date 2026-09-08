@@ -23,7 +23,9 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 class PurchaseRequisitionResource extends Resource
@@ -240,28 +242,38 @@ class PurchaseRequisitionResource extends Resource
                         self::sendApprovedRecordToAccurate($record);
                     }),
                 Tables\Actions\Action::make('reject')
-                    ->label('Reject')
+                    ->label('Tolak')
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
                     ->extraAttributes(['class' => 'w-20 justify-start text-left'])
                     ->visible(fn(PurchaseRequisition $record): bool => self::canRejectRecord($record))
-                    ->requiresConfirmation()
-                    ->modalHeading('Reject Permintaan Barang')
-                    ->modalDescription('Permintaan Barang akan dibatalkan secara lokal dan tidak dikirim ke Accurate.')
-                    ->modalSubmitActionLabel('Reject')
+                    ->modalHeading('Tolak Permintaan Barang')
+                    ->modalDescription('Anda akan menolak permintaan barang ini. Silakan isi alasan penolakan untuk melanjutkan.')
+                    ->modalSubmitActionLabel('Tolak')
                     ->modalCancelActionLabel('Batal')
-                    ->action(function (PurchaseRequisition $record): void {
-                        if (! self::canRejectRecord($record)) {
+                    ->form([
+                        Forms\Components\Textarea::make('rejection_reason')
+                            ->label('Alasan Penolakan')
+                            ->placeholder('Masukkan alasan penolakan...')
+                            ->required()
+                            ->maxLength(65535)
+                            ->rule('not_regex:/^\s*$/')
+                            ->validationMessages([
+                                'not_regex' => 'Alasan Penolakan wajib diisi.',
+                            ]),
+                    ])
+                    ->action(function (PurchaseRequisition $record, array $data): void {
+                        try {
+                            self::rejectRecord($record, (string) ($data['rejection_reason'] ?? ''));
+                        } catch (RuntimeException) {
                             Notification::make()
                                 ->danger()
-                                ->title('Permintaan Barang tidak dapat di-reject.')
-                                ->body('Status atau akses reject tidak memenuhi syarat.')
+                                ->title('Permintaan Barang tidak dapat ditolak.')
+                                ->body('Status atau akses reject sudah berubah sehingga aksi tidak dapat dilanjutkan.')
                                 ->send();
 
                             return;
                         }
-
-                        self::rejectRecord($record);
                     }),
             ])
             ->actionsAlignment('flex-col !items-start !justify-start gap-1')
@@ -321,6 +333,17 @@ class PurchaseRequisitionResource extends Resource
                                 ->columnStart(['xl' => 4]),
                         ])
                         ->columnSpanFull(),
+                ]),
+            Section::make('Penolakan')
+                ->visible(fn(PurchaseRequisition $record): bool => $record->status === 'cancelled' || filled($record->rejected_at))
+                ->schema([
+                    Grid::make(['default' => 1, 'md' => 2, 'xl' => 4])
+                        ->schema([
+                            TextEntry::make('rejection_status')->label('Status')->state(fn() => 'Ditolak')->badge()->color('danger'),
+                            TextEntry::make('rejecter.name')->label('Ditolak Oleh')->placeholder('-'),
+                            TextEntry::make('rejected_at')->label('Tanggal Ditolak')->dateTime('d/m/Y H:i')->placeholder('-'),
+                            TextEntry::make('rejection_reason')->label('Alasan Penolakan')->placeholder('-')->columnSpanFull(),
+                        ]),
                 ]),
         ]);
     }
@@ -528,8 +551,18 @@ class PurchaseRequisitionResource extends Resource
     {
         $status = self::localStatusLabel($record);
         $syncStatus = self::syncStatusLabel($record);
+        $dotColor = match (true) {
+            $record->sync_status === 'synced' => '#16a34a',
+            $record->status === 'cancelled' => '#dc2626',
+            $record->status === 'submitted' => '#f59e0b',
+            default => null,
+        };
 
-        return e($status) . '<br><span class="text-xs text-gray-500">' . e($syncStatus) . '</span>';
+        $statusLine = $dotColor === null
+            ? e($status)
+            : '<span style="display:inline-flex;align-items:center;gap:0.375rem;"><span aria-hidden="true" style="display:inline-block;width:0.5rem;height:0.5rem;border-radius:9999px;background-color:' . $dotColor . ';flex-shrink:0;"></span><span>' . e($status) . '</span></span>';
+
+        return $statusLine . '<br><span class="text-xs text-gray-500">' . e($syncStatus) . '</span>';
     }
 
     private static function approvalActorName(PurchaseRequisition $record): string
@@ -561,24 +594,58 @@ class PurchaseRequisitionResource extends Resource
         return auth()->user()?->can('reject', $record) === true
             && $record->status === 'submitted'
             && $record->sync_status === 'pending'
+            && blank($record->approved_at)
+            && blank($record->rejected_at)
             && blank($record->accurate_id)
             && blank($record->accurate_number);
     }
 
-    private static function rejectRecord(PurchaseRequisition $record): void
+    public static function rejectRecord(PurchaseRequisition $record, string $reason): PurchaseRequisition
     {
-        $record->update([
-            'status' => 'cancelled',
-            'rejected_by' => auth()->id(),
-            'rejected_at' => now(),
-            'error_message' => null,
-        ]);
+        $trimmedReason = trim($reason);
+
+        if ($trimmedReason === '') {
+            throw new RuntimeException('Rejection reason is required.');
+        }
+
+        $updated = DB::transaction(function () use ($record, $trimmedReason): PurchaseRequisition {
+            $locked = PurchaseRequisition::query()->lockForUpdate()->findOrFail($record->getKey());
+
+            if (! self::canRejectRecord($locked)) {
+                throw new RuntimeException('Purchase requisition cannot be rejected.');
+            }
+
+            $previousStatus = $locked->status;
+
+            $locked->update([
+                'status' => 'cancelled',
+                'rejected_by' => auth()->id(),
+                'rejected_at' => now(),
+                'rejection_reason' => $trimmedReason,
+                'error_message' => null,
+            ]);
+
+            $locked->activityLogs()->create([
+                'user_id' => auth()->id(),
+                'action' => 'reject',
+                'summary' => 'Permintaan Barang Ditolak',
+                'changes' => [
+                    'previous_status' => $previousStatus,
+                    'new_status' => 'cancelled',
+                    'rejection_reason' => $trimmedReason,
+                ],
+            ]);
+
+            return $locked->fresh(['items', 'rejecter', 'activityLogs']) ?? $locked;
+        });
 
         Notification::make()
             ->success()
-            ->title('Permintaan Barang berhasil di-reject.')
+            ->title('Permintaan Barang berhasil ditolak.')
             ->body('Data lokal dibatalkan dan tidak dikirim ke Accurate.')
             ->send();
+
+        return $updated;
     }
 
     private static function sendApprovedRecordToAccurate(PurchaseRequisition $record): void

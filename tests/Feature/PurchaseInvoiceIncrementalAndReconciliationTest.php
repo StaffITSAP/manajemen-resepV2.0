@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\PurchaseRequisitions\SyncPurchaseRequisitionItemUnitsBatch;
 use App\Jobs\PurchaseRequisitions\SyncPurchaseRequisitionPurchaseOrdersBatch;
 use App\Models\PurchaseInvoiceLatestPriceMigrationState;
+use App\Models\PurchaseItemCostValue;
 use App\Models\PurchaseItemLatestPrice;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
@@ -13,6 +14,7 @@ use App\Services\Accurate\PurchaseInvoiceLatestPriceSyncService;
 use App\Services\Accurate\PurchaseOrderLatestPriceSyncService;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -52,6 +54,23 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
             $table->timestamp('synced_at')->nullable();
             $table->timestamps();
             $table->unique(['item_accurate_id', 'item_unit_accurate_id'], 'test_latest_item_unit_unique');
+        });
+        Schema::create('purchase_item_cost_values', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('accurate_item_id')->nullable()->constrained('accurate_items')->nullOnDelete();
+            $table->unsignedBigInteger('item_accurate_id');
+            $table->string('item_no')->nullable();
+            $table->string('item_name')->nullable();
+            $table->unsignedBigInteger('item_unit_accurate_id');
+            $table->string('item_unit_name')->nullable();
+            $table->unsignedTinyInteger('unit_position');
+            $table->decimal('unit_price', 24, 8);
+            $table->decimal('balance_unit_cost', 24, 8)->nullable();
+            $table->decimal('ratio', 24, 12)->nullable();
+            $table->decimal('balance_total_cost', 24, 8)->nullable();
+            $table->string('source_hash')->nullable();
+            $table->timestamp('synced_at')->nullable();
+            $table->timestamps();
         });
         Schema::create('purchase_invoice_latest_price_migration_states', function (Blueprint $table): void {
             $table->id();
@@ -114,7 +133,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
     public function test_incremental_start_preserves_existing_cursor(): void
     {
         Queue::fake();
-        $state = $this->completedState(3, 50);
+        $state = $this->completedState(3, 50, null, '2026-08-20');
 
         $result = app(PurchaseRequisitionSmartSync::class)->start();
         $state = $state->fresh();
@@ -131,7 +150,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
     public function test_incremental_failure_records_failure_without_advancing_cursor(): void
     {
         Queue::fake();
-        $state = $this->completedState(3, 50, '2026-08-20');
+        $state = $this->completedState(3, 50, '2026-08-20', '2026-08-19');
         $owner = $this->ownSmartSyncLock();
         $service = new PurchaseInvoiceLatestPriceSyncService(new IncrementalInvoiceFakeClient(failDetailId: 253), fn (): null => null);
 
@@ -152,7 +171,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
     public function test_incremental_retry_resumes_from_saved_checkpoint_and_advances_after_success(): void
     {
         Queue::fake();
-        $state = $this->completedState(3, 50, '2026-08-20');
+        $state = $this->completedState(3, 50, '2026-08-20', '2026-08-19');
         $owner = $this->ownSmartSyncLock();
         (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 3))->handle(
             new PurchaseInvoiceLatestPriceSyncService(new IncrementalInvoiceFakeClient(failDetailId: 253), fn (): null => null),
@@ -182,7 +201,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
     public function test_boundary_capture_exception_marks_incremental_failed_and_releases_lock(): void
     {
         Queue::fake();
-        $state = $this->completedState(3, 50);
+        $state = $this->completedState(3, 50, null, '2026-08-20');
         $owner = $this->ownSmartSyncLock();
 
         (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 3))->handle(
@@ -207,7 +226,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
     public function test_partial_incremental_batch_keeps_running_status_active_boundary_and_lock(): void
     {
         Queue::fake();
-        $state = $this->completedState(1, 0, '2026-09-04');
+        $state = $this->completedState(1, 0, '2026-09-04', '2026-08-19');
         $owner = $this->ownSmartSyncLock();
 
         (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 1))->handle(
@@ -218,7 +237,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
 
         $this->assertSame('incremental_running', $state->status);
         $this->assertSame('2026-09-04', $state->incremental_run_upper_trans_date->toDateString());
-        $this->assertNull($state->incremental_completed_upper_trans_date);
+        $this->assertSame('2026-08-19', $state->incremental_completed_upper_trans_date->toDateString());
         $this->assertSame(1, $state->incremental_page);
         $this->assertSame(50, $state->incremental_row_index);
         $this->assertTrue(PurchaseRequisitionSmartSync::ownsLock($owner));
@@ -240,7 +259,65 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertFalse($result['page_complete']);
     }
 
-    public function test_first_migration_reconciliation_deletes_only_stale_cache_and_leaves_pr_snapshots(): void
+    public function test_pi_parser_handles_slash_dates_as_day_month_year_and_preserves_iso_dates(): void
+    {
+        $service = new PurchaseInvoiceLatestPriceSyncService(new BoundaryInvoiceFakeClient([]), fn (): null => null);
+
+        $this->assertSame('2026-08-12', $service->parsePiDate('12/08/2026')?->toDateString());
+        $this->assertSame('2026-08-13', $service->parsePiDate('13/08/2026')?->toDateString());
+        $this->assertSame('2026-08-31', $service->parsePiDate('31/08/2026')?->toDateString());
+        $this->assertSame('2026-12-08', $service->parsePiDate('08/12/2026')?->toDateString());
+        $this->assertSame('2026-08-20', $service->parsePiDate('2026-08-20')?->toDateString());
+    }
+
+    public function test_candidate_purchase_order_date_uses_canonical_pi_parser_for_detail_date(): void
+    {
+        $client = new BoundaryInvoiceFakeClient([
+            1 => [['id' => 1208, 'transDate' => '11/08/2026']],
+        ], [
+            1208 => ['itemId' => 7208, 'unitId' => 51, 'price' => '1208.00000000', 'date' => '12/08/2026'],
+        ]);
+
+        $result = (new PurchaseInvoiceLatestPriceSyncService($client, fn (): null => null))
+            ->syncSmartUnprocessedPurchaseInvoiceBatch(1, 100, 50, 0, [], 'quick', false, 0, '12/08/2026', null);
+
+        $this->assertTrue($result['ok']);
+        $price = PurchaseItemLatestPrice::query()
+            ->where('item_accurate_id', 7208)
+            ->where('purchase_order_accurate_id', 1208)
+            ->where('source_type', PurchaseItemLatestPrice::SOURCE_TYPE_PI)
+            ->firstOrFail();
+
+        $this->assertSame('2026-08-12', $price->purchase_order_date->toDateString());
+    }
+
+    public function test_incremental_list_row_comparison_uses_canonical_pi_parser(): void
+    {
+        Queue::fake();
+        $state = $this->completedState(1, 0, '2026-08-12', '2026-08-11');
+        $owner = $this->ownSmartSyncLock();
+        $client = new BoundaryInvoiceFakeClient([
+            1 => [
+                ['id' => 1308, 'transDate' => '13/08/2026'],
+                ['id' => 1208, 'transDate' => '12/08/2026'],
+                ['id' => 1108, 'transDate' => '11/08/2026'],
+                ['id' => 1008, 'transDate' => '10/08/2026'],
+            ],
+        ]);
+
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 1))->handle(
+            new PurchaseInvoiceLatestPriceSyncService($client, fn (): null => null),
+        );
+
+        $state = $state->fresh();
+
+        $this->assertSame([1208, 1108], $client->detailIds);
+        $this->assertSame('completed', $state->status);
+        $this->assertSame('2026-08-12', $state->incremental_completed_upper_trans_date->toDateString());
+        $this->assertNull($state->incremental_run_upper_trans_date);
+    }
+
+    public function test_first_migration_reconciliation_deletes_only_stale_pi_cache_and_leaves_non_pi_rows_cost_values_and_pr_snapshots(): void
     {
         $requisition = PurchaseRequisition::query()->create([
             'trans_date' => '2026-08-20',
@@ -262,8 +339,12 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
             'source_purchase_order_number' => 'PO.OLD',
             'source_purchase_order_date' => '2026-08-01',
         ]);
-        $this->latestPrice(501, 51, 9001, 'PO-ONLY');
-        $this->latestPrice(502, 51, 9002, 'WILL-BE-PI');
+        $this->latestPrice(501, 51, 9001, 'PI.STALE', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(502, 51, 9002, 'WILL-BE-PI', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(503, 51, 9003, 'PO.9003', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PO);
+        $this->latestPrice(504, 51, 9004, 'LEGACY.9004');
+        $this->latestPrice(505, 51, 9005, 'CV.9005', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_COST_VALUE);
+        $this->costValue(801, 51, '88.00000000');
         $service = new PurchaseInvoiceLatestPriceSyncService(new IncrementalInvoiceFakeClient(), fn (): null => null);
 
         $result = $service->reconcile([[
@@ -285,6 +366,10 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertSame(1, $result['legacy_deleted']);
         $this->assertDatabaseMissing('purchase_item_latest_prices', ['item_accurate_id' => 501, 'item_unit_accurate_id' => 51]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 502, 'purchase_order_accurate_id' => 3002]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 503, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PO]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 504, 'source_type' => null]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 505, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_COST_VALUE]);
+        $this->assertDatabaseHas('purchase_item_cost_values', ['item_accurate_id' => 801, 'item_unit_accurate_id' => 51, 'unit_price' => '88.00000000']);
         $this->assertSame(1, PurchaseRequisition::query()->count());
         $this->assertSame(1, PurchaseRequisitionItem::query()->count());
         $snapshot = PurchaseRequisitionItem::query()->firstOrFail();
@@ -292,10 +377,146 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertSame('PO.OLD', $snapshot->source_purchase_order_number);
     }
 
+    public function test_empty_reconciliation_deletes_only_pi_rows(): void
+    {
+        $this->latestPrice(901, 51, 1901, 'PI.1901', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(902, 51, 1902, 'PO.1902', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PO);
+        $this->latestPrice(903, 51, 1903, 'LEGACY.1903');
+        $this->latestPrice(904, 51, 1904, 'CV.1904', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_COST_VALUE);
+
+        $result = (new PurchaseInvoiceLatestPriceSyncService(new BoundaryInvoiceFakeClient([]), fn (): null => null))->reconcile([]);
+
+        $this->assertSame(1, $result['legacy_deleted']);
+        $this->assertDatabaseMissing('purchase_item_latest_prices', ['item_accurate_id' => 901]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 902, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PO]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 903, 'source_type' => null]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 904, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_COST_VALUE]);
+    }
+
+    public function test_full_reconciliation_authoritative_candidate_replaces_stale_future_pi_cache(): void
+    {
+        $this->latestPrice(911, 51, 1911, 'PI.STALE', '2026-12-08', '1911.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+
+        $result = (new PurchaseInvoiceLatestPriceSyncService(new BoundaryInvoiceFakeClient([]), fn (): null => null))->reconcile([[
+            'item_accurate_id' => 911,
+            'item_no' => 'ITEM-911',
+            'item_name' => 'Item 911',
+            'item_unit_accurate_id' => 51,
+            'item_unit_name' => 'grm',
+            'unit_price' => '812.00000000',
+            'purchase_order_accurate_id' => 812,
+            'purchase_order_number' => 'PI.2026.08.00120',
+            'purchase_order_date' => '2026-08-12',
+            'purchase_order_detail_id' => 10812,
+            'source_updated_at' => null,
+            'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PI,
+        ]]);
+
+        $this->assertSame(1, $result['updated']);
+        $price = PurchaseItemLatestPrice::query()->where('item_accurate_id', 911)->firstOrFail();
+        $this->assertSame(51, (int) $price->item_unit_accurate_id);
+        $this->assertSame(812, (int) $price->purchase_order_accurate_id);
+        $this->assertSame('PI.2026.08.00120', $price->purchase_order_number);
+        $this->assertSame('2026-08-12', $price->purchase_order_date->toDateString());
+        $this->assertSame('812.00000000', $price->unit_price);
+        $this->assertSame(PurchaseItemLatestPrice::SOURCE_TYPE_PI, $price->source_type);
+    }
+
+    public function test_direct_full_sync_uses_canonical_parser_and_authoritative_latest_candidate_set(): void
+    {
+        $this->latestPrice(931, 51, 1931, 'PI.STALE', '2026-12-08', '1931.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(932, 51, 1932, 'PI.OBSOLETE', '2026-08-01', '1932.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(933, 51, 1933, 'PO.1933', '2026-08-01', '1933.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PO);
+        $this->latestPrice(934, 51, 1934, 'LEGACY.1934');
+        $this->costValue(935, 51, '935.00000000');
+
+        $result = (new PurchaseInvoiceLatestPriceSyncService(new BoundaryInvoiceFakeClient([
+            1 => [
+                ['id' => 812, 'transDate' => '12/08/2026'],
+                ['id' => 813, 'transDate' => '13/08/2026'],
+                ['id' => 811, 'transDate' => '11/08/2026'],
+            ],
+        ], [
+            812 => ['itemId' => 931, 'unitId' => 51, 'price' => '812.00000000', 'date' => '12/08/2026'],
+            813 => ['itemId' => 931, 'unitId' => 51, 'price' => '813.00000000', 'date' => '13/08/2026'],
+            811 => ['itemId' => 936, 'unitId' => 51, 'price' => '811.00000000', 'date' => '2026-08-11'],
+        ]), fn (): null => null))->sync(1, 100, null, null, 0);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(1, $result['inserted']);
+        $this->assertSame(1, $result['updated']);
+        $this->assertSame(1, $result['legacy_deleted']);
+        $updated = PurchaseItemLatestPrice::query()->where('item_accurate_id', 931)->firstOrFail();
+        $inserted = PurchaseItemLatestPrice::query()->where('item_accurate_id', 936)->firstOrFail();
+        $this->assertSame(813, (int) $updated->purchase_order_accurate_id);
+        $this->assertSame('2026-08-13', $updated->purchase_order_date->toDateString());
+        $this->assertSame('813.00000000', $updated->unit_price);
+        $this->assertSame(PurchaseItemLatestPrice::SOURCE_TYPE_PI, $updated->source_type);
+        $this->assertSame(811, (int) $inserted->purchase_order_accurate_id);
+        $this->assertSame('2026-08-11', $inserted->purchase_order_date->toDateString());
+        $this->assertSame(PurchaseItemLatestPrice::SOURCE_TYPE_PI, $inserted->source_type);
+        $this->assertDatabaseMissing('purchase_item_latest_prices', ['item_accurate_id' => 932]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 933, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PO]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 934, 'source_type' => null]);
+        $this->assertDatabaseHas('purchase_item_cost_values', ['item_accurate_id' => 935, 'unit_price' => '935.00000000']);
+    }
+
+    public function test_reconciliation_rolls_back_when_candidate_store_fails(): void
+    {
+        $this->latestPrice(921, 51, 1921, 'PI.1921', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(922, 51, 1922, 'PI.1922', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+
+        try {
+            (new PurchaseInvoiceLatestPriceSyncService(new BoundaryInvoiceFakeClient([]), fn (): null => null))->reconcile([
+                [
+                    'item_accurate_id' => 921,
+                    'item_no' => 'ITEM-921',
+                    'item_name' => 'Item 921',
+                    'item_unit_accurate_id' => 51,
+                    'item_unit_name' => 'grm',
+                    'unit_price' => '921.00000000',
+                    'purchase_order_accurate_id' => 2921,
+                    'purchase_order_number' => 'PI.2921',
+                    'purchase_order_date' => '2026-08-25',
+                    'purchase_order_detail_id' => 12921,
+                    'source_updated_at' => null,
+                    'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PI,
+                ],
+                [
+                    'item_accurate_id' => null,
+                    'item_no' => 'BROKEN',
+                    'item_name' => 'Broken candidate',
+                    'item_unit_accurate_id' => 51,
+                    'item_unit_name' => 'grm',
+                    'unit_price' => '1.00000000',
+                    'purchase_order_accurate_id' => 2999,
+                    'purchase_order_number' => 'PI.2999',
+                    'purchase_order_date' => '2026-08-25',
+                    'purchase_order_detail_id' => 12999,
+                    'source_updated_at' => null,
+                    'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PI,
+                ],
+            ]);
+        } catch (QueryException) {
+        }
+
+        $this->assertDatabaseHas('purchase_item_latest_prices', [
+            'item_accurate_id' => 921,
+            'purchase_order_accurate_id' => 1921,
+            'unit_price' => '100.00000000',
+            'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PI,
+        ]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', [
+            'item_accurate_id' => 922,
+            'purchase_order_accurate_id' => 1922,
+            'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PI,
+        ]);
+    }
+
     public function test_incremental_first_run_captures_upper_date_and_resets_execution_cursor(): void
     {
         Queue::fake();
-        $state = $this->completedState(3, 50);
+        $state = $this->completedState(3, 50, null, '2026-08-20');
         $owner = $this->ownSmartSyncLock();
         $client = new BoundaryInvoiceFakeClient([
             1 => [
@@ -319,10 +540,124 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertSame([10, 9], $client->detailIds);
     }
 
+    public function test_legacy_completed_state_with_missing_boundary_fails_closed_without_using_cache_max_date(): void
+    {
+        Queue::fake();
+        $state = $this->completedState(157, 0);
+        $this->latestPrice(7001, 51, 701, 'PI.701', '2026-09-02', '701.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(7002, 51, 702, 'PI.702', '2026-09-04', '702.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $this->latestPrice(7003, 51, 703, 'PO.703', '2026-09-06', '703.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PO);
+        $owner = $this->ownSmartSyncLock();
+        $client = new BoundaryInvoiceFakeClient([
+            1 => [
+                ['id' => 110, 'transDate' => '2026-09-05'],
+                ['id' => 100, 'transDate' => '2026-09-04'],
+                ['id' => 90, 'transDate' => '2026-09-03'],
+            ],
+        ]);
+
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 157))->handle(
+            new PurchaseInvoiceLatestPriceSyncService($client, fn (): null => null),
+        );
+
+        $state = $state->fresh();
+
+        $this->assertSame('incremental_failed', $state->status);
+        $this->assertNull($state->incremental_completed_upper_trans_date);
+        $this->assertNull($state->incremental_run_upper_trans_date);
+        $this->assertSame('PI incremental baseline is missing. Repair or rebuild the PI latest-price cache before running Smart Sync.', $state->error_message);
+        $this->assertSame([], $client->detailIds);
+        $this->assertSame([], $client->requestedPages);
+        $this->assertDatabaseMissing('purchase_item_latest_prices', ['purchase_order_accurate_id' => 90]);
+    }
+
+    public function test_legacy_completed_state_with_missing_boundary_does_not_proceed_into_historical_scan(): void
+    {
+        Queue::fake();
+        $state = $this->completedState(157, 0);
+        $this->latestPrice(7101, 51, 711, 'PI.711', '2026-09-04', '711.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
+        $owner = $this->ownSmartSyncLock();
+        $client = new BoundaryInvoiceFakeClient([
+            1 => array_map(
+                fn (int $id): array => ['id' => $id, 'transDate' => '2026-09-05'],
+                range(1000, 1099),
+            ),
+        ]);
+
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 157))->handle(
+            new PurchaseInvoiceLatestPriceSyncService($client, fn (): null => null),
+        );
+
+        $state = $state->fresh();
+
+        $this->assertSame('incremental_failed', $state->status);
+        $this->assertNull($state->incremental_run_upper_trans_date);
+        $this->assertNull($state->incremental_completed_upper_trans_date);
+        $this->assertSame(157, $state->incremental_page);
+        $this->assertSame(0, $state->incremental_row_index);
+        $this->assertSame([], $client->detailIds);
+        $this->assertSame([], $client->requestedPages);
+    }
+
+    public function test_empty_pi_cache_missing_legacy_boundary_fails_closed_without_inventing_date(): void
+    {
+        Queue::fake();
+        $state = $this->completedState(157, 0);
+        $owner = $this->ownSmartSyncLock();
+        $client = new BoundaryInvoiceFakeClient([]);
+
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 157))->handle(
+            new PurchaseInvoiceLatestPriceSyncService($client, fn (): null => null),
+        );
+
+        $state = $state->fresh();
+
+        $this->assertSame('incremental_failed', $state->status);
+        $this->assertNull($state->incremental_completed_upper_trans_date);
+        $this->assertNull($state->incremental_run_upper_trans_date);
+        $this->assertSame([], $client->requestedPages);
+    }
+
+    public function test_successful_initial_full_migration_seeds_incremental_completed_boundary_from_reconciled_pi_cache(): void
+    {
+        Queue::fake();
+        $state = PurchaseInvoiceLatestPriceMigrationState::query()->create([
+            'status' => 'running',
+            'run_id' => 'initial-full-migration',
+            'current_page' => 1,
+            'current_row_index' => 0,
+            'incremental_page' => 1,
+            'incremental_row_index' => 0,
+            'candidates' => [],
+            'completed_at' => null,
+        ]);
+        $owner = $this->ownSmartSyncLock();
+        $client = new BoundaryInvoiceFakeClient([
+            1 => [
+                ['id' => 200, 'transDate' => '2026-09-04'],
+                ['id' => 100, 'transDate' => '2026-09-01'],
+            ],
+        ], [
+            200 => ['itemId' => 8200, 'unitId' => 51, 'price' => '200.00000000', 'date' => '2026-09-04'],
+            100 => ['itemId' => 8100, 'unitId' => 51, 'price' => '100.00000000', 'date' => '2026-09-01'],
+        ]);
+
+        (new SyncPurchaseRequisitionPurchaseOrdersBatch($owner, 1))->handle(
+            new PurchaseInvoiceLatestPriceSyncService($client, fn (): null => null),
+        );
+
+        $state = $state->fresh();
+
+        $this->assertSame('completed', $state->status);
+        $this->assertNotNull($state->completed_at);
+        $this->assertSame('2026-09-04', $state->incremental_completed_upper_trans_date->toDateString());
+        $this->assertNull($state->incremental_run_upper_trans_date);
+    }
+
     public function test_incremental_never_calls_reconcile(): void
     {
         Queue::fake();
-        $state = $this->completedState(1, 0, '2026-09-04');
+        $state = $this->completedState(1, 0, '2026-09-04', '2026-09-03');
         $owner = $this->ownSmartSyncLock();
         $service = new ReconcileCountingPurchaseInvoiceLatestPriceSyncService(new BoundaryInvoiceFakeClient([
             1 => [
@@ -672,8 +1007,24 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         Schema::dropIfExists('purchase_requisition_items');
         Schema::dropIfExists('purchase_requisitions');
         Schema::dropIfExists('purchase_invoice_latest_price_migration_states');
+        Schema::dropIfExists('purchase_item_cost_values');
         Schema::dropIfExists('purchase_item_latest_prices');
         Schema::dropIfExists('accurate_items');
+    }
+
+    private function costValue(int $itemId, int $unitId, string $price): PurchaseItemCostValue
+    {
+        return PurchaseItemCostValue::query()->create([
+            'item_accurate_id' => $itemId,
+            'item_no' => "ITEM-$itemId",
+            'item_name' => "Item $itemId",
+            'item_unit_accurate_id' => $unitId,
+            'item_unit_name' => 'grm',
+            'unit_position' => 1,
+            'unit_price' => $price,
+            'balance_unit_cost' => $price,
+            'synced_at' => now(),
+        ]);
     }
 }
 

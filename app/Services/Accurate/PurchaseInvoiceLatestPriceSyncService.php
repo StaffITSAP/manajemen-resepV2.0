@@ -34,8 +34,10 @@ class PurchaseInvoiceLatestPriceSyncService
                 $id = (int) Arr::get($row, 'id', 0); if ($id <= 0) { $stats['skipped_malformed']++; $stats['rows_consumed']++; continue; }
                 $rowDate = $this->rowDate($row);
                 if ($rowDate === null) { $stats['skipped_malformed']++; $stats['rows_consumed']++; continue; }
-                if ($incrementalRunUpperTransDate !== null && $rowDate->gt(Carbon::parse($incrementalRunUpperTransDate))) { $stats['rows_consumed']++; continue; }
-                if ($incrementalCompletedUpperTransDate !== null && $rowDate->lt(Carbon::parse($incrementalCompletedUpperTransDate))) { $stats['boundary_complete'] = true; break 2; }
+                $runUpperDate = $this->parsePiDate($incrementalRunUpperTransDate);
+                $completedUpperDate = $this->parsePiDate($incrementalCompletedUpperTransDate);
+                if ($runUpperDate !== null && $rowDate->gt($runUpperDate)) { $stats['rows_consumed']++; continue; }
+                if ($completedUpperDate !== null && $rowDate->lt($completedUpperDate)) { $stats['boundary_complete'] = true; break 2; }
                 if ($stats['details_fetched'] > 0 && $sleepMs > 0) $this->sleep($sleepMs);
                 $detail = $this->client->detailPurchaseInvoice($id);
                 if (!($detail['ok'] ?? false)) { $stats['failures']++; $stats['ok'] = false; $stats['message'] = 'Gagal mengambil detail Purchase Invoice.'; break 2; }
@@ -78,20 +80,50 @@ class PurchaseInvoiceLatestPriceSyncService
         return ['ok' => true, 'trans_date' => null, 'message' => null];
     }
 
+    public function latestCachedPurchaseInvoiceTransDate(): ?string
+    {
+        $date = PurchaseItemLatestPrice::query()
+            ->where('source_type', PurchaseItemLatestPrice::SOURCE_TYPE_PI)
+            ->whereNotNull('purchase_order_date')
+            ->max('purchase_order_date');
+
+        return $date ? Carbon::parse($date)->toDateString() : null;
+    }
+
     private function rows(mixed $body): array { if (!is_array($body)) throw new RuntimeException('Response list Purchase Invoice tidak valid.'); if (array_key_exists('d',$body)) $rows=$body['d']; elseif (array_key_exists('data',$body)) $rows=$body['data']; elseif (array_key_exists('rows',$body)) $rows=$body['rows']; else throw new RuntimeException('Payload list Purchase Invoice tidak memiliki struktur d/data/rows.'); if (!is_array($rows)||array_filter($rows,'is_array')!==$rows) throw new RuntimeException('Data list Purchase Invoice tidak valid.'); return array_values($rows); }
     private function payload(mixed $body): array { if (!is_array($body)) throw new RuntimeException('Payload detail Purchase Invoice tidak valid.'); return $body['d'] ?? $body['data'] ?? $body; }
-    private function rowDate(array $row): ?Carbon { try { $date = $row['transDate'] ?? null; return $date ? Carbon::parse($date)->startOfDay() : null; } catch (Throwable) { return null; } }
+    private function rowDate(array $row): ?Carbon { return $this->parsePiDate($row['transDate'] ?? null); }
     private function candidates(array $invoice, array $row): array
     {
         $id=(int)($invoice['id']??$row['id']??0); $date=$invoice['transDate']??$row['transDate']??null; $items=$invoice['detailItem']??[]; $out=[];
-        foreach (is_array($items)?$items:[] as $line) { if (!is_array($line)) continue; $item=(int)data_get($line,'item.id',data_get($line,'itemId',0)); $unit=(int)data_get($line,'itemUnit.id',data_get($line,'itemUnitId',0)); $price=$line['unitPrice']??null; if($id<=0||$item<=0||$unit<=0||!is_numeric($price)||!$date) continue; $out[]=['item_accurate_id'=>$item,'item_no'=>data_get($line,'item.no'),'item_name'=>data_get($line,'item.name'),'item_unit_accurate_id'=>$unit,'item_unit_name'=>data_get($line,'itemUnit.name'),'unit_price'=>(string)$price,'purchase_order_accurate_id'=>$id,'purchase_order_number'=>$invoice['number']??$row['number']??null,'purchase_order_date'=>Carbon::parse($date)->toDateString(),'purchase_order_detail_id'=>isset($line['id'])?(int)$line['id']:null,'source_updated_at'=>null,'source_type'=>PurchaseItemLatestPrice::SOURCE_TYPE_PI]; }
+        foreach (is_array($items)?$items:[] as $line) { if (!is_array($line)) continue; $item=(int)data_get($line,'item.id',data_get($line,'itemId',0)); $unit=(int)data_get($line,'itemUnit.id',data_get($line,'itemUnitId',0)); $price=$line['unitPrice']??null; $piDate=$this->parsePiDate($date); if($id<=0||$item<=0||$unit<=0||!is_numeric($price)||$piDate===null) continue; $out[]=['item_accurate_id'=>$item,'item_no'=>data_get($line,'item.no'),'item_name'=>data_get($line,'item.name'),'item_unit_accurate_id'=>$unit,'item_unit_name'=>data_get($line,'itemUnit.name'),'unit_price'=>(string)$price,'purchase_order_accurate_id'=>$id,'purchase_order_number'=>$invoice['number']??$row['number']??null,'purchase_order_date'=>$piDate->toDateString(),'purchase_order_detail_id'=>isset($line['id'])?(int)$line['id']:null,'source_updated_at'=>null,'source_type'=>PurchaseItemLatestPrice::SOURCE_TYPE_PI]; }
         return $out;
+    }
+    public function parsePiDate(mixed $value): ?Carbon
+    {
+        if ($value instanceof Carbon) return $value->copy()->startOfDay();
+        if ($value instanceof \DateTimeInterface) return Carbon::instance($value)->startOfDay();
+        $value = trim((string) $value);
+        if ($value === '') return null;
+        try {
+            if (preg_match('~^\d{1,2}/\d{1,2}/\d{4}$~', $value)) {
+                return Carbon::createFromFormat('!d/m/Y', $value)->startOfDay();
+            }
+            if (preg_match('~^\d{4}-\d{1,2}-\d{1,2}$~', $value)) {
+                return Carbon::createFromFormat('!Y-m-d', $value)->startOfDay();
+            }
+            return Carbon::parse($value)->startOfDay();
+        } catch (Throwable) {
+            return null;
+        }
     }
     private function store(array $candidate): string
     { return DB::transaction(function() use($candidate){ $q=PurchaseItemLatestPrice::query()->where('item_accurate_id',$candidate['item_accurate_id'])->where('item_unit_accurate_id',$candidate['item_unit_accurate_id'])->lockForUpdate(); $old=$q->first(); if($old && !$this->newer($candidate,$old)) return 'unchanged'; $data=$candidate+['source_type'=>PurchaseItemLatestPrice::SOURCE_TYPE_PI,'accurate_item_id'=>AccurateItem::query()->where('accurate_id',$candidate['item_accurate_id'])->value('id'),'synced_at'=>now()]; if($old){$old->update($data);return 'updated';} PurchaseItemLatestPrice::create($data);return 'inserted';}); }
+    private function storeAuthoritative(array $candidate): string
+    { $q=PurchaseItemLatestPrice::query()->where('item_accurate_id',$candidate['item_accurate_id'])->where('item_unit_accurate_id',$candidate['item_unit_accurate_id'])->lockForUpdate(); $old=$q->first(); $data=$candidate+['source_type'=>PurchaseItemLatestPrice::SOURCE_TYPE_PI,'accurate_item_id'=>AccurateItem::query()->where('accurate_id',$candidate['item_accurate_id'])->value('id'),'synced_at'=>now()]; if($old){$old->update($data);return 'updated';} PurchaseItemLatestPrice::create($data);return 'inserted'; }
     private function newer(array $c, PurchaseItemLatestPrice $e): bool { if($e->source_type !== PurchaseItemLatestPrice::SOURCE_TYPE_PI) return true; $d=Carbon::parse($c['purchase_order_date']); $old=$e->purchase_order_date; if(!$old||$d->gt($old)) return true; if($d->lt($old)) return false; $id=(int)$c['purchase_order_accurate_id']; $eid=(int)$e->purchase_order_accurate_id; if($id!==$eid)return $id>$eid; return (int)($c['purchase_order_detail_id']??0)>(int)($e->purchase_order_detail_id??0); }
     private function newerArray(array $c, array $e): bool { $d=Carbon::parse($c['purchase_order_date']); $old=Carbon::parse($e['purchase_order_date']); if($d->gt($old))return true; if($d->lt($old))return false; if((int)$c['purchase_order_accurate_id'] !== (int)$e['purchase_order_accurate_id']) return (int)$c['purchase_order_accurate_id'] > (int)$e['purchase_order_accurate_id']; return (int)($c['purchase_order_detail_id']??0) > (int)($e['purchase_order_detail_id']??0); }
     public function reconcile(array $dataset): array
-    { return DB::transaction(function() use($dataset){ $latest=[]; foreach($dataset as $candidate){$key=$candidate['item_accurate_id'].':'.$candidate['item_unit_accurate_id']; if(!isset($latest[$key])||$this->newerArray($candidate,$latest[$key]))$latest[$key]=$candidate;} $keys=array_keys($latest); $result=['inserted'=>0,'updated'=>0,'unchanged'=>0,'legacy_deleted'=>0]; foreach($latest as $candidate){$result[$this->store($candidate)]++;} $deleted=PurchaseItemLatestPrice::query()->get()->filter(fn($row)=>!in_array($row->item_accurate_id.':'.$row->item_unit_accurate_id,$keys,true)); foreach($deleted as $row){$row->delete();$result['legacy_deleted']++;} return $result;}); }
+    { return DB::transaction(function() use($dataset){ $latest=[]; foreach($dataset as $candidate){$key=$candidate['item_accurate_id'].':'.$candidate['item_unit_accurate_id']; if(!isset($latest[$key])||$this->newerArray($candidate,$latest[$key]))$latest[$key]=$candidate;} $keys=array_keys($latest); $result=['inserted'=>0,'updated'=>0,'unchanged'=>0,'legacy_deleted'=>0]; foreach($latest as $candidate){$result[$this->storeAuthoritative($candidate)]++;} $deleted=PurchaseItemLatestPrice::query()->where('source_type', PurchaseItemLatestPrice::SOURCE_TYPE_PI)->get()->filter(fn($row)=>!in_array($row->item_accurate_id.':'.$row->item_unit_accurate_id,$keys,true)); foreach($deleted as $row){$row->delete();$result['legacy_deleted']++;} return $result;}); }
     private function sleep(int $ms): void { is_callable($this->sleeper) ? ($this->sleeper)($ms) : usleep($ms*1000); }
 }

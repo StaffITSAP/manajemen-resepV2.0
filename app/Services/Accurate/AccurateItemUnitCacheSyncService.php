@@ -107,6 +107,45 @@ class AccurateItemUnitCacheSyncService
         return $stats;
     }
 
+    public function syncSmartFullCostValueBatch(int $limit = 50, int $sleepMs = 500, ?int $afterAccurateId = null): array
+    {
+        $limit = max(1, min($limit, 50));
+        $afterAccurateId = $afterAccurateId === null ? null : max(0, $afterAccurateId);
+
+        $stats = [
+            'ok' => true,
+            'items_selected' => 0,
+            'items_fetched' => 0,
+            'units_inserted' => 0,
+            'units_updated' => 0,
+            'units_unchanged' => 0,
+            'stale_units_removed' => 0,
+            'items_with_no_populated_units' => 0,
+            'cost_values_inserted' => 0,
+            'cost_values_updated' => 0,
+            'cost_values_unchanged' => 0,
+            'stale_cost_values_removed' => 0,
+            'skipped_local_items' => 0,
+            'failures' => 0,
+            'message' => null,
+            'remaining_candidates' => 0,
+            'stage_complete' => false,
+            'next_item_accurate_id' => $afterAccurateId,
+        ];
+
+        $items = $this->smartFullCostValueItems($limit, $afterAccurateId);
+        $stats['items_selected'] = $items->count();
+        $stats = $this->syncSelectedItems($items, $stats, $sleepMs, true);
+        $lastItem = $items->last();
+        $stats['next_item_accurate_id'] = $lastItem !== null
+            ? (int) $lastItem->accurate_id
+            : $afterAccurateId;
+        $stats['remaining_candidates'] = $this->smartFullCostValueCandidateCount($stats['next_item_accurate_id']);
+        $stats['stage_complete'] = $stats['remaining_candidates'] === 0;
+
+        return $stats;
+    }
+
     private function syncSelectedItems($items, array $stats, int $sleepMs, bool $sleepBetweenRequests): array
     {
         $requestCount = 0;
@@ -235,6 +274,34 @@ class AccurateItemUnitCacheSyncService
         return $query->count();
     }
 
+    private function smartFullCostValueItems(int $limit, ?int $afterAccurateId = null)
+    {
+        $query = AccurateItem::query()
+            ->whereNotNull('accurate_id')
+            ->where('accurate_id', '>', 0);
+
+        if ($afterAccurateId !== null) {
+            $query->where('accurate_id', '>', $afterAccurateId);
+        }
+
+        return $query->orderBy('accurate_id')
+            ->limit($limit)
+            ->get();
+    }
+
+    private function smartFullCostValueCandidateCount(?int $afterAccurateId = null): int
+    {
+        $query = AccurateItem::query()
+            ->whereNotNull('accurate_id')
+            ->where('accurate_id', '>', 0);
+
+        if ($afterAccurateId !== null) {
+            $query->where('accurate_id', '>', $afterAccurateId);
+        }
+
+        return $query->count();
+    }
+
     private function sleep(int $sleepMs): void
     {
         if (is_callable($this->sleeper)) {
@@ -257,12 +324,16 @@ class AccurateItemUnitCacheSyncService
             $stats['failures']++;
             $this->logWarning('[AccurateItemUnitCache] cost value refresh failed', [
                 'accurate_item_id' => $item->accurate_id,
+                'item_no' => $item->no,
+                'item_name' => $item->name,
                 'message' => $e->getMessage(),
             ]);
         } catch (Throwable $e) {
             $stats['failures']++;
             $this->logWarning('[AccurateItemUnitCache] unexpected cost value refresh failure', [
                 'accurate_item_id' => $item->accurate_id,
+                'item_no' => $item->no,
+                'item_name' => $item->name,
                 'message' => $e->getMessage(),
             ]);
         }

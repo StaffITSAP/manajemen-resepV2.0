@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\PurchaseInvoiceLatestPriceMigrationState;
 use App\Services\Accurate\PurchaseInvoiceLatestPriceSyncService;
 use InvalidArgumentException;
 use Illuminate\Console\Command;
@@ -54,8 +55,45 @@ class AccurateSyncPurchaseLatestPrices extends Command
             return self::FAILURE;
         }
 
+        $this->seedIncrementalBoundaryAfterCompleteFullRebuild($service, $page, $maxPages, $maxDetails, $result);
+
         $this->info('Sinkron cache harga beli terakhir selesai.');
         return self::SUCCESS;
+    }
+
+    private function seedIncrementalBoundaryAfterCompleteFullRebuild(PurchaseInvoiceLatestPriceSyncService $service, int $page, ?int $maxPages, ?int $maxDetails, array $result): void
+    {
+        if ($page !== 1 || $maxPages !== null || $maxDetails !== null || ! ($result['ok'] ?? false) || (int) ($result['failures'] ?? 0) > 0 || ! array_key_exists('legacy_deleted', $result)) {
+            return;
+        }
+
+        $latestDate = $service->latestCachedPurchaseInvoiceTransDate();
+        if (blank($latestDate)) {
+            $this->line('PI incremental baseline tidak diupdate: cache PI kosong atau tanggal PI tidak tersedia.');
+            return;
+        }
+
+        $state = PurchaseInvoiceLatestPriceMigrationState::query()
+            ->where('status', 'completed')
+            ->whereNotNull('completed_at')
+            ->orderByDesc('completed_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $state) {
+            $this->line('PI incremental baseline tidak diupdate: state completed tidak ditemukan.');
+            return;
+        }
+
+        $state->update([
+            'incremental_page' => 1,
+            'incremental_row_index' => 0,
+            'incremental_run_upper_trans_date' => null,
+            'incremental_completed_upper_trans_date' => $latestDate,
+            'error_message' => null,
+        ]);
+
+        $this->line('PI incremental baseline diupdate: ' . $latestDate);
     }
 
     /**

@@ -10,10 +10,12 @@ use RuntimeException;
 
 class AccurateCostValueSyncService
 {
+    private const EXTERNAL_NUMBER_SCALE = 14;
+
     public function syncFromItemDetailResponse(AccurateItem $item, array $response): array
     {
         $detail = $this->detailFromResponse($response);
-        $balanceUnitCost = $this->positiveNumber($detail['balanceUnitCost'] ?? null);
+        $balanceUnitCost = $this->positiveDetailNumber($detail, 'balanceUnitCost');
 
         if ($balanceUnitCost === null) {
             return $this->removeRowsForItem($item);
@@ -72,7 +74,7 @@ class AccurateCostValueSyncService
                 continue;
             }
 
-            $ratio = $position === 1 ? null : $this->positiveNumber($detail["ratio{$position}"] ?? null);
+            $ratio = $position === 1 ? null : $this->positiveDetailNumber($detail, "ratio{$position}");
             if ($position > 1 && $ratio === null) {
                 continue;
             }
@@ -200,17 +202,59 @@ class AccurateCostValueSyncService
         return $number !== null && (float) $number > 0.0 ? $number : null;
     }
 
-    private function numberOrNull(mixed $value): ?string
+    private function positiveDetailNumber(array $detail, string $key): ?string
     {
-        if ($value === null || $value === '' || ! is_numeric($value)) {
+        if (! array_key_exists($key, $detail) || $detail[$key] === null || $detail[$key] === '') {
             return null;
         }
 
-        return (string) $value;
+        $number = $this->numberOrNull($detail[$key]);
+        if ($number === null) {
+            throw new RuntimeException("Payload detail item memiliki nilai {$key} yang tidak valid.");
+        }
+
+        return (float) $number > 0.0 ? $number : null;
+    }
+
+    private function numberOrNull(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            if (! is_finite($value)) {
+                return null;
+            }
+
+            return $this->trimDecimal(number_format($value, self::EXTERNAL_NUMBER_SCALE, '.', ''));
+        }
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+        if ($value === '' || ! preg_match('/^-?\d+(?:\.\d+)?$/', $value)) {
+            return null;
+        }
+
+        return $this->trimDecimal($value);
     }
 
     private function multiply(string $left, string $right, int $scale): string
     {
+        $left = $this->numberOrNull($left);
+        $right = $this->numberOrNull($right);
+
+        if ($left === null || $right === null) {
+            throw new RuntimeException('Payload detail item memiliki nilai numerik Cost Value yang tidak valid.');
+        }
+
         if (function_exists('bcmul')) {
             return bcmul($left, $right, $scale);
         }
@@ -221,5 +265,16 @@ class AccurateCostValueSyncService
     private function formatDecimal(string $value, int $scale): string
     {
         return number_format((float) $value, $scale, '.', '');
+    }
+
+    private function trimDecimal(string $value): string
+    {
+        if (! str_contains($value, '.')) {
+            return $value;
+        }
+
+        $value = rtrim(rtrim($value, '0'), '.');
+
+        return $value === '-0' ? '0' : $value;
     }
 }

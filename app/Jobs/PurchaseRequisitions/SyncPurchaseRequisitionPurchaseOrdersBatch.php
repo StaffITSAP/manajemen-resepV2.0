@@ -43,6 +43,14 @@ class SyncPurchaseRequisitionPurchaseOrdersBatch implements ShouldQueue
         $incrementalState = $service instanceof PurchaseInvoiceLatestPriceSyncService && ! $migrationState
             ? PurchaseInvoiceLatestPriceMigrationState::query()->whereNotNull('completed_at')->latest('id')->first()
             : null;
+        if ($incrementalState && blank($incrementalState->incremental_completed_upper_trans_date)) {
+            $incrementalState->update([
+                'status' => 'incremental_failed',
+                'error_message' => 'PI incremental baseline is missing. Repair or rebuild the PI latest-price cache before running Smart Sync.',
+            ]);
+            PurchaseRequisitionSmartSync::releaseLock($this->lockOwner);
+            return;
+        }
         if ($incrementalState && blank($incrementalState->incremental_run_upper_trans_date)) {
             try {
                 $boundary = $service->firstPurchaseInvoiceTransDate(100);
@@ -80,7 +88,7 @@ class SyncPurchaseRequisitionPurchaseOrdersBatch implements ShouldQueue
             $syncPage,
             100,
             PurchaseRequisitionSmartSync::BATCH_SIZE,
-            PurchaseRequisitionSmartSync::REQUEST_DELAY_MS,
+            PurchaseRequisitionSmartSync::detailSleepMs(),
             $this->attemptedPurchaseInvoiceIds,
             $this->scanMode,
             $migrationState !== null,
@@ -112,7 +120,12 @@ class SyncPurchaseRequisitionPurchaseOrdersBatch implements ShouldQueue
             $state->update(['current_page' => $result['page_complete'] ? $this->page + 1 : $this->page, 'current_row_index' => $result['next_row_index'] ?? 0, 'candidates' => $merged]);
             if (($result['stage_complete'] ?? false) && ($result['ok'] ?? true)) {
                 $service->reconcile($merged);
-                $state->update(['status' => 'completed', 'completed_at' => now(), 'candidates' => null]);
+                $state->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                    'candidates' => null,
+                    'incremental_completed_upper_trans_date' => $service->latestCachedPurchaseInvoiceTransDate(),
+                ]);
             } elseif (($result['ok'] ?? true) === false) {
                 $state->update(['status' => 'failed', 'error_message' => $result['message'] ?? 'Invoice sync failed.']);
             }
@@ -129,7 +142,7 @@ class SyncPurchaseRequisitionPurchaseOrdersBatch implements ShouldQueue
             $nextPage,
             $nextPage === $syncPage ? ($result['attempted_purchase_invoice_ids'] ?? []) : [],
             $this->scanMode,
-        )->delay(now()->addSeconds(PurchaseRequisitionSmartSync::INTER_BATCH_DELAY_SECONDS));
+        )->delay(now()->addSeconds(PurchaseRequisitionSmartSync::interBatchDelaySeconds()));
     }
 
     public function failed(Throwable $exception): void

@@ -52,6 +52,30 @@
         </div>
     </div>
 
+    @if ($record->status === 'cancelled' || filled($record->rejected_at))
+        <div class="rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm text-danger-900 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-100">
+            <div class="font-medium">Penolakan</div>
+            <dl class="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                    <dt class="text-xs font-medium text-danger-700 dark:text-danger-200">Status</dt>
+                    <dd class="mt-1">Ditolak</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-medium text-danger-700 dark:text-danger-200">Ditolak Oleh</dt>
+                    <dd class="mt-1">{{ $record->rejecter?->name ?? '-' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-medium text-danger-700 dark:text-danger-200">Tanggal Ditolak</dt>
+                    <dd class="mt-1">{{ $record->rejected_at?->format('d/m/Y H:i') ?? '-' }}</dd>
+                </div>
+                <div class="md:col-span-2">
+                    <dt class="text-xs font-medium text-danger-700 dark:text-danger-200">Alasan Penolakan</dt>
+                    <dd class="mt-1 whitespace-pre-wrap">{{ $record->rejection_reason ?: '-' }}</dd>
+                </div>
+            </dl>
+        </div>
+    @endif
+
     @if (filled($record->error_message))
         <div class="rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-900 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-warning-100">
             <div class="font-medium">Pesan Status</div>

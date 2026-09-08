@@ -217,6 +217,80 @@ class PurchaseCostValueFallbackTest extends TestCase
         ]);
     }
 
+    public function test_cost_value_accepts_valid_decimal_and_numeric_string_ratios(): void
+    {
+        $item = $this->item();
+
+        app(AccurateCostValueSyncService::class)->syncFromItemDetailResponse($item, $this->detailResponse([
+            'unit1' => ['id' => 54, 'name' => 'ml'],
+            'unit2' => ['id' => 101, 'name' => 'gln'],
+            'unit3' => ['id' => 102, 'name' => 'btl'],
+            'ratio2' => 2.5,
+            'ratio3' => '3.75',
+            'balanceUnitCost' => '10.5',
+        ]));
+
+        $this->assertDatabaseHas('purchase_item_cost_values', [
+            'item_accurate_id' => 790,
+            'item_unit_accurate_id' => 101,
+            'unit_price' => '26.25000000',
+            'ratio' => '2.500000000000',
+        ]);
+        $this->assertDatabaseHas('purchase_item_cost_values', [
+            'item_accurate_id' => 790,
+            'item_unit_accurate_id' => 102,
+            'unit_price' => '39.37500000',
+            'ratio' => '3.750000000000',
+        ]);
+    }
+
+    public function test_cost_value_normalizes_small_float_ratio_before_bcmath(): void
+    {
+        $item = $this->item(713);
+
+        app(AccurateCostValueSyncService::class)->syncFromItemDetailResponse($item, $this->detailResponse([
+            'id' => 713,
+            'no' => '130001',
+            'name' => 'Air Galon QFast',
+            'unit1' => ['id' => 50, 'name' => 'gln'],
+            'unit2' => ['id' => 51, 'name' => 'ml'],
+            'ratio2' => 5.3E-5,
+            'balanceUnitCost' => 10999.999998,
+        ]));
+
+        $row = PurchaseItemCostValue::query()
+            ->where('item_accurate_id', 713)
+            ->where('item_unit_accurate_id', 51)
+            ->firstOrFail();
+
+        $this->assertSame('0.58299999', $row->unit_price);
+        $this->assertSame('0.000053000000', $row->ratio);
+    }
+
+    public function test_invalid_ratio_fails_without_deleting_existing_cost_value_rows(): void
+    {
+        $item = $this->item();
+        $this->costValue($item, 50, '1.00000000');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Payload detail item memiliki nilai ratio2 yang tidak valid.');
+
+        try {
+            app(AccurateCostValueSyncService::class)->syncFromItemDetailResponse($item, $this->detailResponse([
+                'unit1' => ['id' => 50, 'name' => 'pcs'],
+                'unit2' => ['id' => 51, 'name' => 'box'],
+                'ratio2' => '5,3',
+                'balanceUnitCost' => 10,
+            ]));
+        } finally {
+            $this->assertDatabaseHas('purchase_item_cost_values', [
+                'item_accurate_id' => 790,
+                'item_unit_accurate_id' => 50,
+                'unit_price' => '1.00000000',
+            ]);
+        }
+    }
+
     public function test_cost_value_refresh_removes_stale_rows_for_same_item_only(): void
     {
         $itemA = $this->item(790);

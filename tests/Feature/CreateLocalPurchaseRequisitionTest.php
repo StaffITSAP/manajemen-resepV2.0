@@ -422,11 +422,48 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
             'rejected_by' => $rejecter->id,
         ]);
         $rejected->setRelation('rejecter', $rejecter);
+        $submitted = new PurchaseRequisition([
+            'status' => 'submitted',
+            'sync_status' => 'failed',
+            'error_message' => 'AMBIGUOUS_REVIEW_REQUIRED: transport status unknown',
+        ]);
+        $draft = new PurchaseRequisition([
+            'status' => 'draft',
+            'sync_status' => 'pending',
+        ]);
 
         $this->assertSame('Disetujui oleh Supervisor Approval', PurchaseRequisitionResource::localStatusLabel($approved));
         $this->assertSame('Ditolak oleh Supervisor Reject', PurchaseRequisitionResource::localStatusLabel($rejected));
         $this->assertSame('success', PurchaseRequisitionResource::localStatusColor($approved));
         $this->assertSame('danger', PurchaseRequisitionResource::localStatusColor($rejected));
+
+        $this->assertStatusSummary('Ditolak oleh Supervisor Reject', 'Belum Dikirim ke Accurate', '#dc2626', $rejected);
+        $this->assertStatusSummary('Menunggu Approval', 'Perlu Pemeriksaan', '#f59e0b', $submitted);
+        $this->assertStatusSummary('Disetujui oleh Supervisor Approval', 'Terkirim ke Accurate', '#16a34a', $approved);
+
+        $draftSummary = $this->statusSummary($draft);
+
+        $this->assertStringContainsString('Draft Lokal', $draftSummary);
+        $this->assertStringContainsString('Belum Dikirim ke Accurate', $draftSummary);
+        $this->assertStringNotContainsString('background-color:', $draftSummary);
+    }
+
+    private function statusSummary(PurchaseRequisition $record): string
+    {
+        $method = new \ReflectionMethod(PurchaseRequisitionResource::class, 'statusSummary');
+        $method->setAccessible(true);
+
+        return $method->invoke(null, $record);
+    }
+
+    private function assertStatusSummary(string $status, string $syncStatus, string $color, PurchaseRequisition $record): void
+    {
+        $summary = $this->statusSummary($record);
+
+        $this->assertStringContainsString('display:inline-flex', $summary);
+        $this->assertStringContainsString("background-color:{$color}", $summary);
+        $this->assertStringContainsString($status, $summary);
+        $this->assertStringContainsString($syncStatus, $summary);
     }
 
     private function service(): CreateLocalPurchaseRequisition

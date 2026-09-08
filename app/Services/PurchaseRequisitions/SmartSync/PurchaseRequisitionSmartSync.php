@@ -21,6 +21,16 @@ class PurchaseRequisitionSmartSync
     public const QUEUE_CONNECTION = 'purchase_requisition_sync';
     public const QUEUE_NAME = 'purchase-requisition-sync';
 
+    public static function detailSleepMs(): int
+    {
+        return max(0, (int) config('accurate.purchase_requisition_smart_sync_detail_sleep_ms', self::REQUEST_DELAY_MS));
+    }
+
+    public static function interBatchDelaySeconds(): int
+    {
+        return max(0, (int) config('accurate.purchase_requisition_smart_sync_inter_batch_delay_seconds', self::INTER_BATCH_DELAY_SECONDS));
+    }
+
     /**
      * @return array{status:string, lock_owner?:string}
      */

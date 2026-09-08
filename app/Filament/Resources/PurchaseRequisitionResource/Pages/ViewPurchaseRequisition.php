@@ -78,40 +78,37 @@ class ViewPurchaseRequisition extends ViewRecord
                     $this->sendToAccurate($record);
                 }),
             Action::make('reject')
-                ->label('Reject')
+                ->label('Tolak')
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
                 ->visible(fn(PurchaseRequisition $record): bool => $this->canReject($record))
-                ->requiresConfirmation()
-                ->modalHeading('Reject Permintaan Barang')
-                ->modalDescription('Permintaan Barang akan dibatalkan secara lokal dan tidak dikirim ke Accurate.')
-                ->modalSubmitActionLabel('Reject')
+                ->modalHeading('Tolak Permintaan Barang')
+                ->modalDescription('Anda akan menolak permintaan barang ini. Silakan isi alasan penolakan untuk melanjutkan.')
+                ->modalSubmitActionLabel('Tolak')
                 ->modalCancelActionLabel('Batal')
-                ->action(function (PurchaseRequisition $record): void {
-                    if (! $this->canReject($record)) {
+                ->form([
+                    \Filament\Forms\Components\Textarea::make('rejection_reason')
+                        ->label('Alasan Penolakan')
+                        ->placeholder('Masukkan alasan penolakan...')
+                        ->required()
+                        ->maxLength(65535)
+                        ->rule('not_regex:/^\s*$/')
+                        ->validationMessages([
+                            'not_regex' => 'Alasan Penolakan wajib diisi.',
+                        ]),
+                ])
+                ->action(function (PurchaseRequisition $record, array $data): void {
+                    try {
+                        $this->record = PurchaseRequisitionResource::rejectRecord($record, (string) ($data['rejection_reason'] ?? ''));
+                    } catch (\RuntimeException) {
                         Notification::make()
                             ->danger()
-                            ->title('Permintaan Barang tidak dapat di-reject.')
-                            ->body('Status atau akses reject tidak memenuhi syarat.')
+                            ->title('Permintaan Barang tidak dapat ditolak.')
+                            ->body('Status atau akses reject sudah berubah sehingga aksi tidak dapat dilanjutkan.')
                             ->send();
 
                         return;
                     }
-
-                    $record->update([
-                        'status' => 'cancelled',
-                        'rejected_by' => auth()->id(),
-                        'rejected_at' => now(),
-                        'error_message' => null,
-                    ]);
-
-                    $this->record = $record->fresh(['items']) ?? $record;
-
-                    Notification::make()
-                        ->success()
-                        ->title('Permintaan Barang berhasil di-reject.')
-                        ->body('Data lokal dibatalkan dan tidak dikirim ke Accurate.')
-                        ->send();
                 }),
         ];
     }
@@ -136,6 +133,8 @@ class ViewPurchaseRequisition extends ViewRecord
         return auth()->user()?->can('reject', $record) === true
             && $record->status === 'submitted'
             && $record->sync_status === 'pending'
+            && blank($record->approved_at)
+            && blank($record->rejected_at)
             && blank($record->accurate_id)
             && blank($record->accurate_number);
     }

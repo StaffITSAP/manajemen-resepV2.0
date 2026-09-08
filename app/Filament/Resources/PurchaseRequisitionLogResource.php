@@ -143,7 +143,7 @@ class PurchaseRequisitionLogResource extends Resource
                     ->icon('heroicon-o-eye')
                     ->modalHeading(fn(PurchaseRequisition $record): string => self::detailModalHeading($record))
                     ->modalContent(fn(PurchaseRequisition $record) => view('filament.components.purchase-requisition-log-detail', [
-                        'record' => $record->loadMissing(['user', 'items']),
+                        'record' => $record->loadMissing(['rejecter', 'user', 'items']),
                     ]))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup')
