@@ -10,6 +10,7 @@ use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
 use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use App\Services\PurchaseRequisitions\PurchaseLatestPriceResolver;
+use App\Services\PurchaseRequisitions\UpdatePurchaseRequisitionReceiptStatus;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists\Components\Grid;
@@ -25,6 +26,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\HtmlString;
 use RuntimeException;
 use Throwable;
 
@@ -204,6 +206,9 @@ class PurchaseRequisitionResource extends Resource
                     ->label('Status')
                     ->state(fn(PurchaseRequisition $record): string => self::statusSummary($record))
                     ->html(),
+                Tables\Columns\ViewColumn::make('receipt_status')
+                    ->label(new HtmlString('<span class="sr-only">Status Penerimaan</span><span aria-hidden="true" class="block leading-tight">Status</span><span aria-hidden="true" class="block leading-tight">Penerimaan</span>'))
+                    ->view('filament.tables.columns.purchase-requisition-receipt-status'),
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Dibuat Oleh')
                     ->placeholder('-')
@@ -275,6 +280,88 @@ class PurchaseRequisitionResource extends Resource
                             return;
                         }
                     }),
+                Tables\Actions\Action::make('confirmReceipt')
+                    ->label('Diterima')
+                    ->extraAttributes(['class' => 'hidden'])
+                    ->disabled(fn(PurchaseRequisition $record): bool => ! self::canRequesterConfirmReceipt($record))
+                    ->requiresConfirmation()
+                    ->modalHeading('Konfirmasi Penerimaan Barang')
+                    ->modalDescription('Apakah Anda yakin barang pada permintaan ini sudah diterima?')
+                    ->modalSubmitActionLabel('Ya, Sudah Diterima')
+                    ->modalCancelActionLabel('Batal')
+                    ->action(function (PurchaseRequisition $record): void {
+                        $user = auth()->user();
+
+                        if (! $user) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Status penerimaan tidak dapat diperbarui.')
+                                ->body('Sesi pengguna tidak ditemukan.')
+                                ->send();
+
+                            return;
+                        }
+
+                        try {
+                            app(UpdatePurchaseRequisitionReceiptStatus::class)->confirmReceived($record, $user);
+                        } catch (RuntimeException) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Status penerimaan tidak dapat diperbarui.')
+                                ->body('Status atau akses penerimaan sudah berubah.')
+                                ->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->success()
+                            ->title('Status penerimaan diperbarui.')
+                            ->body('Barang ditandai sudah diterima.')
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('revertReceipt')
+                    ->label('Batalkan Penerimaan')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('warning')
+                    ->extraAttributes(['class' => 'w-32 justify-start text-left'])
+                    ->visible(fn(PurchaseRequisition $record): bool => self::canSuperAdminRevertReceipt($record))
+                    ->requiresConfirmation()
+                    ->modalHeading('Batalkan Penerimaan Barang')
+                    ->modalDescription('Konfirmasi penerimaan akan dibatalkan dan requester dapat mengonfirmasi ulang.')
+                    ->modalSubmitActionLabel('Batalkan Penerimaan')
+                    ->modalCancelActionLabel('Batal')
+                    ->action(function (PurchaseRequisition $record): void {
+                        $user = auth()->user();
+
+                        if (! $user) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Penerimaan barang tidak dapat dibatalkan.')
+                                ->body('Sesi pengguna tidak ditemukan.')
+                                ->send();
+
+                            return;
+                        }
+
+                        try {
+                            app(UpdatePurchaseRequisitionReceiptStatus::class)->revertReceived($record, $user);
+                        } catch (RuntimeException) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Penerimaan barang tidak dapat dibatalkan.')
+                                ->body('Status penerimaan sudah berubah.')
+                                ->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->success()
+                            ->title('Penerimaan barang dibatalkan.')
+                            ->body('Requester dapat mengonfirmasi penerimaan kembali.')
+                            ->send();
+                    }),
             ])
             ->actionsAlignment('flex-col !items-start !justify-start gap-1')
             ->bulkActions([])
@@ -294,6 +381,8 @@ class PurchaseRequisitionResource extends Resource
                             TextEntry::make('branch_name')->label('Cabang')->badge()->color('info'),
                             TextEntry::make('approval_status')->label('Status Lokal')->state(fn(PurchaseRequisition $record): string => self::localStatusLabel($record))->badge()->color(fn(PurchaseRequisition $record): string => self::localStatusColor($record)),
                             TextEntry::make('sync_status')->label('Status Sinkronisasi')->formatStateUsing(fn(PurchaseRequisition $record): string => self::syncStatusLabel($record))->badge()->color(fn(PurchaseRequisition $record): string => self::syncStatusColor($record)),
+                            TextEntry::make('receipt_status')->label('Status Penerimaan')->state(fn(PurchaseRequisition $record): string => self::receiptStatusLabel($record))->badge()->color(fn(PurchaseRequisition $record): string => self::receiptStatusColor($record))->visible(fn(PurchaseRequisition $record): bool => $record->isReceiptEligible()),
+                            TextEntry::make('received_at')->label('Diterima Pada')->dateTime('d/m/Y H:i')->placeholder('-')->visible(fn(PurchaseRequisition $record): bool => $record->receiptStatusOrDefault() === PurchaseRequisition::RECEIPT_STATUS_RECEIVED),
                             TextEntry::make('accurate_status')->label('Status Accurate')->placeholder('-')->badge()->color('gray'),
                             TextEntry::make('accurate_number')->label('Nomor Accurate')->placeholder('-'),
                             TextEntry::make('user.name')->label('Dibuat Oleh')->placeholder('-'),
@@ -547,6 +636,22 @@ class PurchaseRequisitionResource extends Resource
         };
     }
 
+    public static function receiptStatusLabel(PurchaseRequisition $record): string
+    {
+        return match ($record->receiptStatusOrDefault()) {
+            PurchaseRequisition::RECEIPT_STATUS_RECEIVED => 'Diterima',
+            default => 'Belum Diterima',
+        };
+    }
+
+    public static function receiptStatusColor(PurchaseRequisition $record): string
+    {
+        return match ($record->receiptStatusOrDefault()) {
+            PurchaseRequisition::RECEIPT_STATUS_RECEIVED => 'success',
+            default => 'warning',
+        };
+    }
+
     private static function statusSummary(PurchaseRequisition $record): string
     {
         $status = self::localStatusLabel($record);
@@ -598,6 +703,20 @@ class PurchaseRequisitionResource extends Resource
             && blank($record->rejected_at)
             && blank($record->accurate_id)
             && blank($record->accurate_number);
+    }
+
+    private static function canRequesterConfirmReceipt(PurchaseRequisition $record): bool
+    {
+        return auth()->user()?->can('confirmReceipt', $record) === true
+            && $record->isReceiptEligible()
+            && $record->receiptStatusOrDefault() === PurchaseRequisition::RECEIPT_STATUS_PENDING;
+    }
+
+    private static function canSuperAdminRevertReceipt(PurchaseRequisition $record): bool
+    {
+        return auth()->user()?->can('revertReceipt', $record) === true
+            && $record->isReceiptEligible()
+            && $record->receiptStatusOrDefault() === PurchaseRequisition::RECEIPT_STATUS_RECEIVED;
     }
 
     public static function rejectRecord(PurchaseRequisition $record, string $reason): PurchaseRequisition

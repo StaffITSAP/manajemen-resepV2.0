@@ -12,7 +12,7 @@ class PurchaseRequisitionPolicy
 
     public function before(User $user, string $ability): bool|null
     {
-        if ($ability === 'update') {
+        if (in_array($ability, ['update', 'confirmReceipt', 'revertReceipt'], true)) {
             return null;
         }
 
@@ -43,6 +43,23 @@ class PurchaseRequisitionPolicy
     public function reject(User $user, PurchaseRequisition $purchaseRequisition): bool
     {
         return $user->hasPermission('reject_purchase_requisition');
+    }
+
+    public function confirmReceipt(User $user, PurchaseRequisition $purchaseRequisition): bool
+    {
+        return ! $user->hasRole('superadmin')
+            && $purchaseRequisition->isVisibleTo($user)
+            && filled($purchaseRequisition->user_id)
+            && (int) $purchaseRequisition->user_id === (int) $user->id
+            && $purchaseRequisition->isReceiptEligible()
+            && $purchaseRequisition->receiptStatusOrDefault() === PurchaseRequisition::RECEIPT_STATUS_PENDING;
+    }
+
+    public function revertReceipt(User $user, PurchaseRequisition $purchaseRequisition): bool
+    {
+        return $user->hasRole('superadmin')
+            && $purchaseRequisition->isReceiptEligible()
+            && $purchaseRequisition->receiptStatusOrDefault() === PurchaseRequisition::RECEIPT_STATUS_RECEIVED;
     }
 
     public function update(User $user, PurchaseRequisition $purchaseRequisition): bool

@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PurchaseRequisition extends Model
 {
+    public const RECEIPT_STATUS_PENDING = 'pending';
+    public const RECEIPT_STATUS_RECEIVED = 'received';
+
     protected $table = 'purchase_requisitions';
     protected $guarded = [];
 
@@ -19,6 +22,7 @@ class PurchaseRequisition extends Model
         'synced_at'  => 'datetime',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'received_at' => 'datetime',
     ];
 
     public function user(): BelongsTo
@@ -82,5 +86,18 @@ class PurchaseRequisition extends Model
             && blank($this->rejected_at)
             && blank($this->accurate_id)
             && blank($this->accurate_number);
+    }
+
+    public function isReceiptEligible(): bool
+    {
+        return $this->status === 'submitted'
+            && $this->sync_status === 'synced'
+            && filled($this->approved_at)
+            && blank($this->rejected_at);
+    }
+
+    public function receiptStatusOrDefault(): string
+    {
+        return $this->receipt_status ?: self::RECEIPT_STATUS_PENDING;
     }
 }
