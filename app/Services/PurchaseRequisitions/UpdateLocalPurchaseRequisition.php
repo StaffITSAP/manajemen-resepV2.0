@@ -28,6 +28,11 @@ class UpdateLocalPurchaseRequisition
             }
 
             $before = $this->snapshot($locked);
+            $existingAccurateItemIds = $locked->items
+                ->pluck('accurate_item_id')
+                ->filter()
+                ->map(fn($id): int => (int) $id)
+                ->all();
             $items = $data['items'] ?? [];
 
             if (! is_array($items) || $items === []) {
@@ -56,7 +61,7 @@ class UpdateLocalPurchaseRequisition
             $locked->items()->delete();
 
             foreach (array_values($items) as $index => $itemData) {
-                $this->createItem($locked, $itemData, $index);
+                $this->createItem($locked, $itemData, $index, $existingAccurateItemIds);
             }
 
             $locked = $locked->fresh(['items']) ?? $locked;
@@ -78,7 +83,7 @@ class UpdateLocalPurchaseRequisition
         });
     }
 
-    private function createItem(PurchaseRequisition $requisition, array $data, int $index): void
+    private function createItem(PurchaseRequisition $requisition, array $data, int $index, array $existingAccurateItemIds): void
     {
         $prefix = "items.{$index}";
         $accurateItemId = (int) ($data['accurate_item_id'] ?? 0);
@@ -100,6 +105,10 @@ class UpdateLocalPurchaseRequisition
         $item = AccurateItem::query()->find($accurateItemId);
         if (! $item || (int) $item->accurate_id <= 0) {
             throw ValidationException::withMessages(["{$prefix}.accurate_item_id" => 'Barang Accurate lokal tidak valid.']);
+        }
+
+        if (! $item->is_active && ! in_array((int) $item->id, $existingAccurateItemIds, true)) {
+            throw ValidationException::withMessages(["{$prefix}.accurate_item_id" => 'Barang Accurate sudah tidak aktif dan tidak dapat dipilih.']);
         }
 
         $unit = AccurateItemUnit::query()

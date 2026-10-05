@@ -46,6 +46,7 @@ class PurchaseCostValueFallbackTest extends TestCase
             $table->unsignedBigInteger('accurate_id')->unique();
             $table->string('no')->nullable();
             $table->string('name')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->json('raw')->nullable();
             $table->timestamps();
         });

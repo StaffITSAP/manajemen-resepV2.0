@@ -85,18 +85,7 @@ class PurchaseRequisitionResource extends Resource
                                 ->placeholder('Pilih barang')
                                 ->searchable()
                                 ->required()
-                                ->getSearchResultsUsing(fn(string $search): array => AccurateItem::query()
-                                    ->where(function (Builder $query) use ($search) {
-                                        $query->where('name', 'like', "%{$search}%")
-                                            ->orWhere('no', 'like', "%{$search}%");
-                                    })
-                                    ->orderBy('name')
-                                    ->limit(50)
-                                    ->get()
-                                    ->mapWithKeys(fn(AccurateItem $item) => [
-                                        $item->id => trim(($item->no ? "{$item->no} - " : '') . (string) $item->name),
-                                    ])
-                                    ->toArray())
+                                ->getSearchResultsUsing(fn(string $search): array => self::activeItemSearchResults($search))
                                 ->getOptionLabelUsing(fn($value): ?string => self::itemLabel($value))
                                 ->live()
                                 ->afterStateUpdated(function (Forms\Set $set, ?int $state) {
@@ -477,6 +466,23 @@ class PurchaseRequisitionResource extends Resource
         $branch = AccurateBranch::query()->where('name', 'Kantor Pusat')->first();
 
         return $branch ? $branch->name : 'Kantor Pusat belum tersedia';
+    }
+
+    private static function activeItemSearchResults(string $search): array
+    {
+        return AccurateItem::query()
+            ->where('is_active', true)
+            ->where(function (Builder $query) use ($search) {
+                $query->where('name', 'like', "%{$search}%")
+                    ->orWhere('no', 'like', "%{$search}%");
+            })
+            ->orderBy('name')
+            ->limit(50)
+            ->get()
+            ->mapWithKeys(fn(AccurateItem $item) => [
+                $item->id => trim(($item->no ? "{$item->no} - " : '') . (string) $item->name),
+            ])
+            ->toArray();
     }
 
     private static function itemLabel(mixed $value): ?string

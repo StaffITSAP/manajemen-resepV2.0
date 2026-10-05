@@ -114,6 +114,12 @@ class CreateLocalPurchaseRequisition
             ]);
         }
 
+        if (! $item->is_active) {
+            throw ValidationException::withMessages([
+                "{$prefix}.accurate_item_id" => 'Barang Accurate sudah tidak aktif dan tidak dapat dipilih.',
+            ]);
+        }
+
         $unit = AccurateItemUnit::query()
             ->where('item_accurate_id', $item->accurate_id)
             ->where('item_unit_accurate_id', $unitAccurateId)

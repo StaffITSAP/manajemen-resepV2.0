@@ -42,6 +42,7 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
             $table->unsignedBigInteger('accurate_id')->unique();
             $table->string('no')->nullable();
             $table->string('name')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->json('raw')->nullable();
             $table->timestamps();
         });
@@ -373,6 +374,33 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         $this->assertSame(1, $record->items()->count());
     }
 
+    public function test_inactive_item_is_rejected_for_new_purchase_requisition(): void
+    {
+        $this->createBranch();
+        $item = $this->createItem(790, '100069', 'Barang Nonaktif', false);
+        $this->createUnit($item, 50, 'pcs', 1);
+        $this->createLatestPrice($item, 50, '75000.00000000', 81350, 'PO.2026.08.00170', '2026-08-20');
+
+        try {
+            $this->service()->create([
+                'items' => [[
+                    'accurate_item_id' => $item->id,
+                    'item_unit_accurate_id' => 50,
+                    'quantity' => '1',
+                    'required_date' => '2026-08-25',
+                ]],
+            ]);
+            $this->fail('Inactive item should be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'Barang Accurate sudah tidak aktif dan tidak dapat dipilih.',
+                $exception->errors()['items.0.accurate_item_id'][0],
+            );
+        }
+
+        $this->assertSame(0, PurchaseRequisition::count());
+    }
+
     public function test_resource_has_no_delete_page_and_has_pending_approval_edit_page(): void
     {
         $pages = array_keys(PurchaseRequisitionResource::getPages());
@@ -479,12 +507,13 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         ]);
     }
 
-    private function createItem(int $accurateId, string $no, string $name): AccurateItem
+    private function createItem(int $accurateId, string $no, string $name, bool $isActive = true): AccurateItem
     {
         return AccurateItem::create([
             'accurate_id' => $accurateId,
             'no' => $no,
             'name' => $name,
+            'is_active' => $isActive,
             'raw' => [],
         ]);
     }

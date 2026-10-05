@@ -95,6 +95,7 @@ class EditPurchaseRequisitionTest extends TestCase
             $table->unsignedBigInteger('accurate_id')->unique();
             $table->string('no')->nullable();
             $table->string('name')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
 
@@ -335,6 +336,61 @@ class EditPurchaseRequisitionTest extends TestCase
         $this->assertSame('Local Only', $record->fresh()->description);
     }
 
+    public function test_edit_rejects_selecting_an_inactive_item_that_is_not_historical(): void
+    {
+        $active = $this->item(790, 'ACTIVE', 'Barang Aktif');
+        $inactive = $this->item(791, 'INACTIVE', 'Barang Nonaktif', false);
+        $this->unit($active, 50, 'pcs');
+        $this->unit($inactive, 50, 'pcs');
+        $this->price($active, 50, '100.00000000', 'PO-ACTIVE');
+        $this->price($inactive, 50, '100.00000000', 'PO-INACTIVE');
+        $record = $this->requisition();
+        $record->items()->create($this->itemSnapshot($active, 50));
+
+        $this->expectException(ValidationException::class);
+        app(UpdateLocalPurchaseRequisition::class)->update($record, [
+            'items' => [[
+                'accurate_item_id' => $inactive->id,
+                'item_unit_accurate_id' => 50,
+                'quantity' => '1',
+                'required_date' => '2026-09-01',
+            ]],
+        ]);
+    }
+
+    public function test_historical_inactive_item_remains_readable_and_editable(): void
+    {
+        $inactive = $this->item(790, 'INACTIVE', 'Barang Nonaktif', false);
+        $this->unit($inactive, 50, 'pcs');
+        $this->price($inactive, 50, '100.00000000', 'PO-INACTIVE');
+        $record = $this->requisition();
+        $record->items()->create($this->itemSnapshot($inactive, 50));
+
+        $updated = app(UpdateLocalPurchaseRequisition::class)->update($record, [
+            'items' => [[
+                'accurate_item_id' => $inactive->id,
+                'item_unit_accurate_id' => 50,
+                'quantity' => '2',
+                'required_date' => '2026-09-01',
+            ]],
+        ]);
+
+        $this->assertSame('Barang Nonaktif', $updated->items->first()->item_name);
+        $this->assertSame('2.000000', $updated->items->first()->quantity);
+    }
+
+    public function test_item_search_offers_only_active_items(): void
+    {
+        $active = $this->item(790, 'ACTIVE', 'Barang Aktif');
+        $this->item(791, 'INACTIVE', 'Barang Nonaktif', false);
+
+        $method = new \ReflectionMethod(PurchaseRequisitionResource::class, 'activeItemSearchResults');
+        $method->setAccessible(true);
+        $options = $method->invoke(null, 'Barang');
+
+        $this->assertSame([$active->id => 'ACTIVE - Barang Aktif'], $options);
+    }
+
     private function userWithPermission(string ...$permissionNames): User
     {
         $label = implode('-', $permissionNames);
@@ -369,9 +425,25 @@ class EditPurchaseRequisitionTest extends TestCase
         ], $overrides));
     }
 
-    private function item(int $accurateId, string $no, string $name): AccurateItem
+    private function item(int $accurateId, string $no, string $name, bool $isActive = true): AccurateItem
     {
-        return AccurateItem::create(['accurate_id' => $accurateId, 'no' => $no, 'name' => $name]);
+        return AccurateItem::create(['accurate_id' => $accurateId, 'no' => $no, 'name' => $name, 'is_active' => $isActive]);
+    }
+
+    private function itemSnapshot(AccurateItem $item, int $unitId): array
+    {
+        return [
+            'accurate_item_id' => $item->id,
+            'item_accurate_id' => $item->accurate_id,
+            'item_no' => $item->no,
+            'item_name' => $item->name,
+            'item_unit_accurate_id' => $unitId,
+            'item_unit_name' => 'pcs',
+            'quantity' => '1.000000',
+            'required_date' => '2026-08-30',
+            'latest_purchase_unit_price' => '100.00000000',
+            'total_price' => '100.00000000',
+        ];
     }
 
     private function unit(AccurateItem $item, int $unitId, string $name): AccurateItemUnit

@@ -35,7 +35,7 @@ class SyncAccurateItemsJob implements ShouldQueue
             }
 
             $resp = $client->get('item/list.do', [
-                'fields'       => 'id,no,name',
+                'fields'       => 'id,no,name,suspended',
                 'sp.page'      => $page,   // ← kunci yang benar
                 'sp.pageSize'  => $size,   // ← kunci yang benar
             ]);
@@ -68,6 +68,7 @@ class SyncAccurateItemsJob implements ShouldQueue
                     'accurate_id' => (int) ($it['id'] ?? 0),
                     'no'          => $it['no']   ?? null,
                     'name'        => $it['name'] ?? null,
+                    'is_active'   => ! (bool) ($it['suspended'] ?? false),
                     'raw'         => json_encode($it),
                     'created_at'  => $now,
                     'updated_at'  => $now,
@@ -77,7 +78,7 @@ class SyncAccurateItemsJob implements ShouldQueue
             DB::table('accurate_items')->upsert(
                 $rows,
                 ['accurate_id'],
-                ['no','name','raw','updated_at']
+                ['no','name','is_active','raw','updated_at']
             );
 
             $total += $count;

@@ -8,5 +8,8 @@ class AccurateItem extends Model
 {
     protected $table = 'accurate_items';
     protected $guarded = [];
-    protected $casts = ['raw' => 'array'];
+    protected $casts = [
+        'raw' => 'array',
+        'is_active' => 'boolean',
+    ];
 }
