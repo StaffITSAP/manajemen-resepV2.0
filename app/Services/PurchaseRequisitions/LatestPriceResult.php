@@ -10,7 +10,7 @@ class LatestPriceResult
 {
     public function __construct(
         public readonly string $price,
-        public readonly string $sourceType,
+        public readonly ?string $sourceType,
         public readonly ?int $sourceDocumentAccurateId = null,
         public readonly ?string $sourceDocumentNumber = null,
         public readonly CarbonInterface|string|null $sourceDocumentDate = null,
@@ -36,5 +36,10 @@ class LatestPriceResult
             sourceType: PurchaseItemLatestPrice::SOURCE_TYPE_COST_VALUE,
             sourcePriceSyncedAt: $costValue->synced_at,
         );
+    }
+
+    public static function zero(): self
+    {
+        return new self(price: '0.00000000', sourceType: null);
     }
 }

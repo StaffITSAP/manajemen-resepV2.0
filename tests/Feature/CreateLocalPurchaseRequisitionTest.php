@@ -235,7 +235,7 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         $this->assertSame('Admin Permintaan', $record->creator_name);
     }
 
-    public function test_pcs_and_grm_for_same_item_are_distinguishable_and_price_requires_item_plus_unit(): void
+    public function test_pcs_and_grm_for_same_item_are_distinguishable_and_missing_unit_price_resolves_to_zero(): void
     {
         $this->createBranch();
         $item = $this->createItem(790, '100069', 'Alchemy 200gr');
@@ -243,9 +243,7 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         $this->createUnit($item, 51, 'grm', 2);
         $this->createLatestPrice($item, 50, '75000.00000000', 81350, 'PO.2026.08.00170', '2026-08-20');
 
-        $this->expectException(ValidationException::class);
-
-        $this->service()->create([
+        $record = $this->service()->create([
             'trans_date' => '2026-08-22',
             'description' => 'Outlet A',
             'items' => [[
@@ -255,6 +253,8 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
                 'required_date' => '2026-08-25',
             ]],
         ]);
+
+        $this->assertSame('0.00000000', $record->items->first()->latest_purchase_unit_price);
     }
 
     public function test_item_without_cached_units_cannot_be_saved_and_rolls_back_parent(): void
@@ -281,14 +281,13 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         $this->assertSame(0, PurchaseRequisition::count());
     }
 
-    public function test_missing_latest_price_is_rejected_safely_and_rolls_back(): void
+    public function test_missing_latest_price_is_snapshotted_as_zero(): void
     {
         $this->createBranch();
         $item = $this->createItem(790, '100069', 'Alchemy 200gr');
         $this->createUnit($item, 50, 'pcs', 1);
 
-        try {
-            $this->service()->create([
+        $record = $this->service()->create([
                 'trans_date' => '2026-08-22',
                 'description' => 'Outlet A',
                 'items' => [[
@@ -298,11 +297,9 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
                     'required_date' => '2026-08-25',
                 ]],
             ]);
-        } catch (ValidationException) {
-            //
-        }
 
-        $this->assertSame(0, PurchaseRequisition::count());
+        $this->assertSame(1, PurchaseRequisition::count());
+        $this->assertSame('0.00000000', $record->items->first()->latest_purchase_unit_price);
     }
 
     public function test_price_from_another_unit_is_never_used(): void
@@ -313,8 +310,7 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
         $this->createUnit($item, 51, 'grm', 2);
         $this->createLatestPrice($item, 51, '375.00000000', 81350, 'PO.2026.08.00170', '2026-08-20');
 
-        try {
-            $this->service()->create([
+        $record = $this->service()->create([
                 'trans_date' => '2026-08-22',
                 'description' => 'Outlet A',
                 'items' => [[
@@ -324,11 +320,9 @@ class CreateLocalPurchaseRequisitionTest extends TestCase
                     'required_date' => '2026-08-25',
                 ]],
             ]);
-        } catch (ValidationException) {
-            //
-        }
 
-        $this->assertSame(0, PurchaseRequisition::count());
+        $this->assertSame(1, PurchaseRequisition::count());
+        $this->assertSame('0.00000000', $record->items->first()->latest_purchase_unit_price);
     }
 
     public function test_kantor_pusat_must_exist_locally(): void

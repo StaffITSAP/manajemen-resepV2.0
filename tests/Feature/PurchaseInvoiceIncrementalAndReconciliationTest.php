@@ -317,7 +317,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertNull($state->incremental_run_upper_trans_date);
     }
 
-    public function test_first_migration_reconciliation_deletes_only_stale_pi_cache_and_leaves_non_pi_rows_cost_values_and_pr_snapshots(): void
+    public function test_first_migration_reconciliation_keeps_stale_pi_cache_and_leaves_non_pi_rows_cost_values_and_pr_snapshots(): void
     {
         $requisition = PurchaseRequisition::query()->create([
             'trans_date' => '2026-08-20',
@@ -363,8 +363,8 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         ]]);
 
         $this->assertSame(1, $result['updated']);
-        $this->assertSame(1, $result['legacy_deleted']);
-        $this->assertDatabaseMissing('purchase_item_latest_prices', ['item_accurate_id' => 501, 'item_unit_accurate_id' => 51]);
+        $this->assertSame(0, $result['legacy_deleted']);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 501, 'item_unit_accurate_id' => 51]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 502, 'purchase_order_accurate_id' => 3002]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 503, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PO]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 504, 'source_type' => null]);
@@ -377,7 +377,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertSame('PO.OLD', $snapshot->source_purchase_order_number);
     }
 
-    public function test_empty_reconciliation_deletes_only_pi_rows(): void
+    public function test_empty_reconciliation_keeps_existing_rows_for_history(): void
     {
         $this->latestPrice(901, 51, 1901, 'PI.1901', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
         $this->latestPrice(902, 51, 1902, 'PO.1902', '2026-08-01', '100.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PO);
@@ -386,8 +386,8 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
 
         $result = (new PurchaseInvoiceLatestPriceSyncService(new BoundaryInvoiceFakeClient([]), fn (): null => null))->reconcile([]);
 
-        $this->assertSame(1, $result['legacy_deleted']);
-        $this->assertDatabaseMissing('purchase_item_latest_prices', ['item_accurate_id' => 901]);
+        $this->assertSame(0, $result['legacy_deleted']);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 901]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 902, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PO]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 903, 'source_type' => null]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 904, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_COST_VALUE]);
@@ -445,7 +445,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertTrue($result['ok']);
         $this->assertSame(1, $result['inserted']);
         $this->assertSame(1, $result['updated']);
-        $this->assertSame(1, $result['legacy_deleted']);
+        $this->assertSame(0, $result['legacy_deleted']);
         $updated = PurchaseItemLatestPrice::query()->where('item_accurate_id', 931)->firstOrFail();
         $inserted = PurchaseItemLatestPrice::query()->where('item_accurate_id', 936)->firstOrFail();
         $this->assertSame(813, (int) $updated->purchase_order_accurate_id);
@@ -455,7 +455,7 @@ class PurchaseInvoiceIncrementalAndReconciliationTest extends TestCase
         $this->assertSame(811, (int) $inserted->purchase_order_accurate_id);
         $this->assertSame('2026-08-11', $inserted->purchase_order_date->toDateString());
         $this->assertSame(PurchaseItemLatestPrice::SOURCE_TYPE_PI, $inserted->source_type);
-        $this->assertDatabaseMissing('purchase_item_latest_prices', ['item_accurate_id' => 932]);
+        $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 932]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 933, 'source_type' => PurchaseItemLatestPrice::SOURCE_TYPE_PO]);
         $this->assertDatabaseHas('purchase_item_latest_prices', ['item_accurate_id' => 934, 'source_type' => null]);
         $this->assertDatabaseHas('purchase_item_cost_values', ['item_accurate_id' => 935, 'unit_price' => '935.00000000']);

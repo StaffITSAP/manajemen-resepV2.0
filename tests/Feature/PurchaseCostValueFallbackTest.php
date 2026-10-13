@@ -11,6 +11,7 @@ use App\Models\PurchaseRequisition;
 use App\Services\Accurate\AccurateCostValueSyncService;
 use App\Services\PurchaseRequisitions\CreateLocalPurchaseRequisition;
 use App\Services\PurchaseRequisitions\PurchaseLatestPriceResolver;
+use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -152,6 +153,15 @@ class PurchaseCostValueFallbackTest extends TestCase
             $table->date('source_purchase_order_date')->nullable();
             $table->timestamps();
         });
+
+        Carbon::setTestNow(Carbon::parse('2026-10-13 12:00:00', 'Asia/Jakarta'));
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
     }
 
     public function test_resolver_uses_pi_before_cost_value(): void
@@ -165,6 +175,68 @@ class PurchaseCostValueFallbackTest extends TestCase
 
         $this->assertSame(PurchaseItemLatestPrice::SOURCE_TYPE_PI, $resolved?->sourceType);
         $this->assertSame('123.00000000', $resolved->price);
+    }
+
+    public function test_pi_six_months_old_is_used(): void
+    {
+        $item = $this->item();
+        $this->unit($item, 50, 'pcs', 1);
+        $this->costValue($item, 50, '999.00000000');
+        $this->pi($item, 50, '123.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI, '2026-04-13');
+
+        $resolved = app(PurchaseLatestPriceResolver::class)->resolve(790, 50);
+
+        $this->assertSame('123.00000000', $resolved?->price);
+    }
+
+    public function test_pi_on_the_rolling_one_year_cutoff_is_used(): void
+    {
+        $item = $this->item();
+        $this->unit($item, 50, 'pcs', 1);
+        $this->costValue($item, 50, '999.00000000');
+        $this->pi($item, 50, '123.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI, '2025-10-13');
+
+        $resolved = app(PurchaseLatestPriceResolver::class)->resolve(790, 50);
+
+        $this->assertSame('123.00000000', $resolved?->price);
+    }
+
+    public function test_pi_older_than_the_rolling_one_year_window_is_ignored(): void
+    {
+        $item = $this->item();
+        $this->unit($item, 50, 'pcs', 1);
+        $this->pi($item, 50, '123.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI, '2025-10-12');
+
+        $resolved = app(PurchaseLatestPriceResolver::class)->resolve(790, 50);
+
+        $this->assertNull($resolved?->sourceType);
+        $this->assertSame('0.00000000', $resolved?->price);
+    }
+
+    public function test_old_pi_falls_back_to_valid_cost_value(): void
+    {
+        $item = $this->item();
+        $this->unit($item, 50, 'pcs', 1);
+        $this->costValue($item, 50, '77.00000000');
+        $this->pi($item, 50, '123.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI, '2025-10-12');
+
+        $resolved = app(PurchaseLatestPriceResolver::class)->resolve(790, 50);
+
+        $this->assertSame(PurchaseItemLatestPrice::SOURCE_TYPE_COST_VALUE, $resolved?->sourceType);
+        $this->assertSame('77.00000000', $resolved?->price);
+    }
+
+    public function test_no_eligible_pi_and_invalid_cost_value_resolve_to_zero(): void
+    {
+        $item = $this->item();
+        $this->unit($item, 50, 'pcs', 1);
+        $this->costValue($item, 50, '0.00000000');
+        $this->pi($item, 50, '123.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PI, '2025-10-12');
+
+        $resolved = app(PurchaseLatestPriceResolver::class)->resolve(790, 50);
+
+        $this->assertNull($resolved?->sourceType);
+        $this->assertSame('0.00000000', $resolved?->price);
     }
 
     public function test_resolver_uses_cost_value_when_exact_unit_has_no_pi(): void
@@ -187,7 +259,10 @@ class PurchaseCostValueFallbackTest extends TestCase
         $this->unit($item, 50, 'pcs', 1);
         $this->pi($item, 50, '123.00000000', PurchaseItemLatestPrice::SOURCE_TYPE_PO);
 
-        $this->assertNull(app(PurchaseLatestPriceResolver::class)->resolve(790, 50));
+        $resolved = app(PurchaseLatestPriceResolver::class)->resolve(790, 50);
+
+        $this->assertNull($resolved?->sourceType);
+        $this->assertSame('0.00000000', $resolved?->price);
     }
 
     public function test_cost_value_materializes_base_and_alternate_units(): void
@@ -362,15 +437,35 @@ class PurchaseCostValueFallbackTest extends TestCase
         $this->assertNull($line->source_purchase_order_accurate_id);
     }
 
-    public function test_create_purchase_requisition_still_rejects_when_no_source_exists(): void
+    public function test_create_purchase_requisition_with_no_valid_price_snapshots_zero(): void
     {
         AccurateBranch::create(['accurate_id' => 50, 'name' => 'Kantor Pusat']);
         $item = $this->item();
         $this->unit($item, 50, 'pcs', 1);
 
-        $this->expectException(ValidationException::class);
+        $record = app(CreateLocalPurchaseRequisition::class)->create([
+            'trans_date' => '2026-10-13',
+            'items' => [[
+                'accurate_item_id' => $item->id,
+                'item_unit_accurate_id' => 50,
+                'quantity' => '2',
+                'required_date' => '2026-10-14',
+            ]],
+        ]);
 
-        app(CreateLocalPurchaseRequisition::class)->create([
+        $line = $record->items->first();
+        $this->assertSame('0.00000000', $line->latest_purchase_unit_price);
+        $this->assertSame('0.00000000', $line->total_price);
+        $this->assertNull($line->latest_price_source_type);
+    }
+
+    public function test_create_purchase_requisition_allows_zero_when_no_source_exists(): void
+    {
+        AccurateBranch::create(['accurate_id' => 50, 'name' => 'Kantor Pusat']);
+        $item = $this->item();
+        $this->unit($item, 50, 'pcs', 1);
+
+        $record = app(CreateLocalPurchaseRequisition::class)->create([
             'trans_date' => '2026-09-05',
             'items' => [[
                 'accurate_item_id' => $item->id,
@@ -379,6 +474,8 @@ class PurchaseCostValueFallbackTest extends TestCase
                 'required_date' => '2026-09-06',
             ]],
         ]);
+
+        $this->assertSame('0.00000000', $record->items->first()->latest_purchase_unit_price);
     }
 
     private function item(int $accurateId = 790): AccurateItem
@@ -405,7 +502,7 @@ class PurchaseCostValueFallbackTest extends TestCase
         ]);
     }
 
-    private function pi(AccurateItem $item, int $unitId, string $price, string $sourceType = PurchaseItemLatestPrice::SOURCE_TYPE_PI): PurchaseItemLatestPrice
+    private function pi(AccurateItem $item, int $unitId, string $price, string $sourceType = PurchaseItemLatestPrice::SOURCE_TYPE_PI, string $date = '2026-09-01'): PurchaseItemLatestPrice
     {
         return PurchaseItemLatestPrice::create([
             'accurate_item_id' => $item->id,
@@ -417,7 +514,7 @@ class PurchaseCostValueFallbackTest extends TestCase
             'unit_price' => $price,
             'purchase_order_accurate_id' => 900,
             'purchase_order_number' => 'PI.900',
-            'purchase_order_date' => '2026-09-01',
+            'purchase_order_date' => $date,
             'purchase_order_detail_id' => 901,
             'source_type' => $sourceType,
         ]);

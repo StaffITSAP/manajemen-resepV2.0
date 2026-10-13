@@ -10,6 +10,9 @@ class PurchaseLatestPriceResolver
 {
     public function resolve(int $itemAccurateId, int $unitAccurateId): ?LatestPriceResult
     {
+        $now = now();
+        $cutoff = $now->copy()->subYear();
+
         $piQuery = PurchaseItemLatestPrice::query()
             ->where('item_accurate_id', $itemAccurateId)
             ->where('item_unit_accurate_id', $unitAccurateId);
@@ -18,14 +21,21 @@ class PurchaseLatestPriceResolver
             $piQuery->where('source_type', PurchaseItemLatestPrice::SOURCE_TYPE_PI);
         }
 
-        $pi = $piQuery->first();
+        $pi = $piQuery
+            ->whereNotNull('purchase_order_date')
+            ->where('purchase_order_date', '>=', $cutoff->toDateString())
+            ->where('purchase_order_date', '<=', $now->toDateString())
+            ->where('unit_price', '>', 0)
+            ->orderByDesc('purchase_order_date')
+            ->orderByDesc('purchase_order_accurate_id')
+            ->first();
 
         if ($pi !== null) {
             return LatestPriceResult::fromPurchaseInvoice($pi);
         }
 
         if (! Schema::hasTable('purchase_item_cost_values')) {
-            return null;
+            return LatestPriceResult::zero();
         }
 
         $costValue = PurchaseItemCostValue::query()
@@ -34,6 +44,6 @@ class PurchaseLatestPriceResolver
             ->where('unit_price', '>', 0)
             ->first();
 
-        return $costValue === null ? null : LatestPriceResult::fromCostValue($costValue);
+        return $costValue === null ? LatestPriceResult::zero() : LatestPriceResult::fromCostValue($costValue);
     }
 }

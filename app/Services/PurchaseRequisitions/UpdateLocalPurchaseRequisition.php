@@ -122,11 +122,7 @@ class UpdateLocalPurchaseRequisition
 
         $latestPrice = app(PurchaseLatestPriceResolver::class)->resolve((int) $item->accurate_id, $unitAccurateId);
 
-        if ($latestPrice === null) {
-            throw ValidationException::withMessages(["{$prefix}.latest_purchase_unit_price" => 'Harga pembelian terakhir belum tersedia.']);
-        }
-
-        $unitPrice = (string) $latestPrice->price;
+        $unitPrice = (string) ($latestPrice?->price ?? '0.00000000');
 
         $snapshot = [
             'accurate_item_id' => $item->id,
@@ -140,17 +136,17 @@ class UpdateLocalPurchaseRequisition
             'note' => $data['note'] ?? null,
             'latest_purchase_unit_price' => $unitPrice,
             'total_price' => $this->multiplyDecimal($quantity, $unitPrice),
-            'source_purchase_order_accurate_id' => $latestPrice->sourceDocumentAccurateId,
-            'source_purchase_order_number' => $latestPrice->sourceDocumentNumber,
-            'source_purchase_order_date' => $latestPrice->sourceDocumentDate,
+            'source_purchase_order_accurate_id' => $latestPrice?->sourceDocumentAccurateId,
+            'source_purchase_order_number' => $latestPrice?->sourceDocumentNumber,
+            'source_purchase_order_date' => $latestPrice?->sourceDocumentDate,
         ];
 
         foreach ([
-            'latest_price_source_type' => $latestPrice->sourceType,
-            'source_document_accurate_id' => $latestPrice->sourceDocumentAccurateId,
-            'source_document_number' => $latestPrice->sourceDocumentNumber,
-            'source_document_date' => $latestPrice->sourceDocumentDate,
-            'source_price_synced_at' => $latestPrice->sourcePriceSyncedAt,
+            'latest_price_source_type' => $latestPrice?->sourceType,
+            'source_document_accurate_id' => $latestPrice?->sourceDocumentAccurateId,
+            'source_document_number' => $latestPrice?->sourceDocumentNumber,
+            'source_document_date' => $latestPrice?->sourceDocumentDate,
+            'source_price_synced_at' => $latestPrice?->sourcePriceSyncedAt,
         ] as $column => $value) {
             if (Schema::hasColumn('purchase_requisition_items', $column)) {
                 $snapshot[$column] = $value;
