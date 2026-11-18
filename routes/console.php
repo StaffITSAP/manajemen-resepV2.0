@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Schedule;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -49,3 +50,8 @@ Artisan::command('app:after-deploy', function () {
 
     $this->info('Post-deploy done.');
 });
+
+Schedule::command('accurate:scheduled-sync-items')
+    ->cron('0 */3 * * *')
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping(180);

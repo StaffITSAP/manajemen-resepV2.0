@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\AccurateItemResource\Pages;
 
 use App\Filament\Resources\AccurateItemResource;
-use App\Jobs\SyncAccurateItemsJob;
+use App\Services\Accurate\AccurateItemSyncRunner;
 use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
@@ -23,8 +23,16 @@ class ListAccurateItems extends ListRecords
                 ->color('primary')
                 ->visible(fn() => Auth::user()?->hasRole('superadmin'))
                 ->requiresConfirmation()
-                ->action(function () {
-                    SyncAccurateItemsJob::dispatchSync();
+                ->action(function (AccurateItemSyncRunner $runner) {
+                    if (! $runner->run()) {
+                        Notification::make()
+                            ->title('Sinkronisasi sedang berjalan')
+                            ->body('Sinkronisasi barang Accurate lain masih aktif.')
+                            ->warning()
+                            ->send();
+
+                        return;
+                    }
 
                     Notification::make()
                         ->title('Sinkronisasi selesai')
