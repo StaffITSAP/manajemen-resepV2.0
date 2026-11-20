@@ -197,6 +197,36 @@ class EditPurchaseRequisitionTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_edit_and_view_use_indonesian_display_format_without_localizing_form_state(): void
+    {
+        $user = $this->userWithPermission('view_purchase_requisition_own', 'edit_purchase_requisition');
+        $item = $this->item(792, 'ITEM-2', 'Item Tampilan');
+        $this->unit($item, 51, 'pcs');
+        $record = $this->requisition(['user_id' => $user->id]);
+        $record->items()->create([
+            ...$this->itemSnapshot($item, 51),
+            'quantity' => '10.000000',
+            'latest_purchase_unit_price' => '90000.00000000',
+            'total_price' => '900000.00000000',
+        ]);
+        $this->actingAs($user);
+
+        $edit = Livewire::test(EditPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertSuccessful();
+
+        $itemState = array_values($edit->get('data.items'))[0];
+        $this->assertSame('10.000000', $itemState['quantity']);
+        $this->assertSame('Rp 90.000,00', $itemState['latest_price_display']);
+        $this->assertSame('Rp 900.000,00', $itemState['total_price_display']);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertSuccessful()
+            ->assertSee('10,000000')
+            ->assertSee('Rp 90.000,00')
+            ->assertSee('Rp 900.000,00')
+            ->assertDontSee('IDR');
+    }
+
     public function test_unauthorized_user_cannot_edit_pending_record(): void
     {
         $user = $this->userWithPermission('view_purchase_requisition_own');
@@ -273,6 +303,40 @@ class EditPurchaseRequisitionTest extends TestCase
             'action' => 'Edit Permintaan Barang',
         ]);
         $this->assertStringContainsString('Ganti item', $updated->activityLogs()->first()->summary);
+    }
+
+    public function test_update_re_resolves_stale_price_and_ignores_client_price_and_total(): void
+    {
+        $user = $this->userWithPermission('view_purchase_requisition_own', 'edit_purchase_requisition');
+        $item = $this->item(790, 'ITEM-1', 'Item');
+        $this->unit($item, 50, 'pcs');
+        $price = $this->price($item, 50, '100.00000000', 'PI-OLD');
+        $record = $this->requisition(['user_id' => $user->id]);
+        $record->items()->create($this->itemSnapshot($item, 50));
+
+        $price->update([
+            'unit_price' => '275.50000000',
+            'purchase_order_number' => 'PI-CURRENT',
+            'purchase_order_date' => '2026-09-01',
+        ]);
+
+        $updated = app(UpdateLocalPurchaseRequisition::class)->update($record, [
+            'items' => [[
+                'accurate_item_id' => $item->id,
+                'item_unit_accurate_id' => 50,
+                'quantity' => '2.5',
+                'required_date' => '2026-09-05',
+                'latest_purchase_unit_price' => '0.00000001',
+                'total_price' => '0.00000002',
+                'source_purchase_order_number' => 'CLIENT-STALE',
+            ]],
+        ], $user->id);
+
+        $savedItem = $updated->items->first();
+        $this->assertSame('2.500000', $savedItem->quantity);
+        $this->assertSame('275.50000000', $savedItem->latest_purchase_unit_price);
+        $this->assertSame('688.75000000', $savedItem->total_price);
+        $this->assertSame('PI-CURRENT', $savedItem->source_purchase_order_number);
     }
 
     public function test_approved_and_rejected_records_are_locked_for_button_and_direct_access(): void

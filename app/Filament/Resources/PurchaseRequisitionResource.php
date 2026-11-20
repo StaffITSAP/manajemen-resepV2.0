@@ -31,6 +31,7 @@ use App\Models\PurchaseRequisitionItem;
 use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use App\Services\PurchaseRequisitions\PurchaseLatestPriceResolver;
 use App\Services\PurchaseRequisitions\UpdatePurchaseRequisitionReceiptStatus;
+use App\Support\PurchaseRequisitionFormatter;
 use Filament\Forms;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -104,10 +105,27 @@ class PurchaseRequisitionResource extends Resource
                                 ->searchable()
                                 ->required()
                                 ->getSearchResultsUsing(fn(string $search): array => self::activeItemSearchResults($search))
-                                ->getOptionLabelUsing(fn($value): ?string => self::itemLabel($value))
+                                ->getOptionLabelUsing(fn($value, Get $get): ?string => self::itemLabelFromState(
+                                    $value,
+                                    $get('accurate_item_label_display'),
+                                ))
                                 ->live()
+                                ->partiallyRenderComponentsAfterStateUpdated([
+                                    'item_no_display',
+                                    'item_unit_accurate_id',
+                                    'latest_price_display',
+                                    'total_price_display',
+                                    'price_status',
+                                ])
                                 ->afterStateUpdated(function (Set $set, ?int $state) {
-                                    $set('item_no_display', self::itemNo($state));
+                                    $item = filled($state) ? AccurateItem::query()->find($state) : null;
+                                    $set('item_no_display', $item?->no);
+                                    $set('accurate_item_label_display', $item
+                                        ? trim(($item->no ? "{$item->no} - " : '') . (string) $item->name)
+                                        : null);
+                                    $unitOptions = $item ? self::unitOptions($state) : [];
+                                    $set('unit_options', $unitOptions);
+                                    $set('unit_options_available', $unitOptions !== []);
                                     $set('item_unit_accurate_id', null);
                                     $set('latest_purchase_unit_price', null);
                                     $set('latest_price_display', null);
@@ -119,8 +137,7 @@ class PurchaseRequisitionResource extends Resource
                             TextInput::make('item_no_display')
                                 ->label('Kode Barang')
                                 ->disabled()
-                                ->dehydrated(false)
-                                ->formatStateUsing(fn($state, Get $get) => self::itemNo($get('accurate_item_id'))),
+                                ->dehydrated(false),
 
                             TextInput::make('quantity')
                                 ->label('Kuantitas')
@@ -130,16 +147,27 @@ class PurchaseRequisitionResource extends Resource
                                 ->required()
                                 ->minValue(0.000001)
                                 ->live(onBlur: true)
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::refreshPriceState($set, $get)),
+                                ->partiallyRenderComponentsAfterStateUpdated(['total_price_display'])
+                                ->afterStateUpdated(fn(Set $set, Get $get) => self::refreshTotalPriceState($set, $get)),
 
                             Select::make('item_unit_accurate_id')
                                 ->label('Satuan')
                                 ->placeholder('Pilih satuan')
                                 ->required()
-                                ->options(fn(Get $get): array => self::unitOptions($get('accurate_item_id')))
+                                ->options(fn(Get $get): array => is_array($get('unit_options'))
+                                    ? $get('unit_options')
+                                    : self::unitOptions($get('accurate_item_id')))
                                 ->searchable()
                                 ->live()
-                                ->helperText(fn(Get $get): ?string => self::unitHelperText($get('accurate_item_id')))
+                                ->partiallyRenderComponentsAfterStateUpdated([
+                                    'latest_price_display',
+                                    'total_price_display',
+                                    'price_status',
+                                ])
+                                ->helperText(fn(Get $get): ?string => self::unitHelperText(
+                                    $get('accurate_item_id'),
+                                    $get('unit_options_available'),
+                                ))
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::refreshPriceState($set, $get)),
 
                             DatePicker::make('required_date')
@@ -157,6 +185,9 @@ class PurchaseRequisitionResource extends Resource
 
                             Hidden::make('latest_purchase_unit_price'),
                             Hidden::make('total_price'),
+                            Hidden::make('accurate_item_label_display')->dehydrated(false),
+                            Hidden::make('unit_options')->dehydrated(false),
+                            Hidden::make('unit_options_available')->dehydrated(false),
 
                             TextInput::make('latest_price_display')
                                 ->label('Harga Satuan')
@@ -209,7 +240,7 @@ class PurchaseRequisitionResource extends Resource
                 TextColumn::make('estimated_total')
                     ->label('Nilai Estimasi')
                     ->state(fn(PurchaseRequisition $record): float => (float) ($record->items_total_price ?? 0))
-                    ->formatStateUsing(fn(float $state): string => 'Rp. ' . number_format($state, 2, '.', ','))
+                    ->formatStateUsing(fn(float $state): string => PurchaseRequisitionFormatter::rupiah($state))
                     ->alignRight(),
                 TextColumn::make('status_summary')
                     ->label('Status')
@@ -407,12 +438,18 @@ class PurchaseRequisitionResource extends Resource
                                 ->schema([
                                     TextEntry::make('item_name')->label('Barang'),
                                     TextEntry::make('item_no')->label('Kode'),
-                                    TextEntry::make('quantity')->label('Qty')->numeric(decimalPlaces: 6),
+                                    TextEntry::make('quantity')
+                                        ->label('Qty')
+                                        ->formatStateUsing(fn($state): string => PurchaseRequisitionFormatter::quantity($state)),
                                     TextEntry::make('item_unit_name')->label('Satuan')->badge(),
                                     TextEntry::make('required_date')->label('Tanggal Diminta')->date('d/m/Y'),
                                     TextEntry::make('note')->label('Keterangan')->placeholder('-'),
-                                    TextEntry::make('latest_purchase_unit_price')->label('Harga Satuan')->money('IDR', true),
-                                    TextEntry::make('total_price')->label('Harga Total')->money('IDR', true),
+                                    TextEntry::make('latest_purchase_unit_price')
+                                        ->label('Harga Satuan')
+                                        ->formatStateUsing(fn($state): string => PurchaseRequisitionFormatter::rupiah($state)),
+                                    TextEntry::make('total_price')
+                                        ->label('Harga Total')
+                                        ->formatStateUsing(fn($state): string => PurchaseRequisitionFormatter::rupiah($state)),
                                     TextEntry::make('latest_price_source_type')->label('Sumber Harga')->placeholder('-'),
                                     TextEntry::make('source_document_number')->label('Dokumen Sumber')->placeholder('-'),
                                     TextEntry::make('source_document_date')->label('Tanggal Dokumen')->date('d/m/Y')->placeholder('-'),
@@ -424,7 +461,7 @@ class PurchaseRequisitionResource extends Resource
                             TextEntry::make('estimated_total')
                                 ->label('')
                                 ->state(fn(PurchaseRequisition $record): float => (float) $record->items->sum('total_price'))
-                                ->formatStateUsing(fn(float $state): string => 'Total Nilai : IDR ' . number_format($state, 2, '.', ','))
+                                ->formatStateUsing(fn(float $state): string => 'Total Nilai : ' . PurchaseRequisitionFormatter::rupiah($state))
                                 ->html()
                                 ->extraAttributes([
                                     'class' => 'mt-4 border-b border-gray-200 pb-2 pt-4 text-right text-base font-bold',
@@ -524,33 +561,33 @@ class PurchaseRequisitionResource extends Resource
         return $item ? trim(($item->no ? "{$item->no} - " : '') . (string) $item->name) : null;
     }
 
-    private static function itemNo(mixed $accurateItemId): ?string
+    private static function itemLabelFromState(mixed $value, mixed $label): ?string
     {
-        return AccurateItem::query()->whereKey($accurateItemId)->value('no');
+        return filled($label) ? (string) $label : self::itemLabel($value);
     }
 
     private static function unitOptions(mixed $accurateItemId): array
     {
-        $item = AccurateItem::query()->find($accurateItemId);
-
-        if (! $item) {
+        if (blank($accurateItemId)) {
             return [];
         }
 
         return AccurateItemUnit::query()
-            ->where('item_accurate_id', $item->accurate_id)
+            ->whereIn('item_accurate_id', AccurateItem::query()->select('accurate_id')->whereKey($accurateItemId))
             ->orderBy('position')
             ->pluck('item_unit_name', 'item_unit_accurate_id')
             ->toArray();
     }
 
-    private static function unitHelperText(mixed $accurateItemId): ?string
+    private static function unitHelperText(mixed $accurateItemId, mixed $hasUnitOptions): ?string
     {
         if (blank($accurateItemId)) {
             return null;
         }
 
-        return self::unitOptions($accurateItemId) === []
+        $hasUnits = $hasUnitOptions ?? (self::unitOptions($accurateItemId) !== []);
+
+        return ! $hasUnits
             ? 'Satuan barang belum tersedia di cache lokal.'
             : null;
     }
@@ -582,9 +619,28 @@ class PurchaseRequisitionResource extends Resource
             : null;
 
         $set('latest_purchase_unit_price', $unitPrice);
-        $set('latest_price_display', 'Rp ' . number_format((float) $unitPrice, 0, ',', '.'));
+        $set('latest_price_display', PurchaseRequisitionFormatter::rupiah($unitPrice));
         $set('total_price', $totalPrice);
-        $set('total_price_display', $totalPrice === null ? null : 'Rp ' . number_format((float) $totalPrice, 0, ',', '.'));
+        $set('total_price_display', $totalPrice === null ? null : PurchaseRequisitionFormatter::rupiah($totalPrice));
+    }
+
+    private static function refreshTotalPriceState(Set $set, Get $get): void
+    {
+        $quantity = (string) ($get('quantity') ?? '');
+        $unitPrice = (string) ($get('latest_purchase_unit_price') ?? '');
+        $hasSelectedItemAndUnit = filled($get('accurate_item_id')) && filled($get('item_unit_accurate_id'));
+
+        $totalPrice = $hasSelectedItemAndUnit
+            && is_numeric($quantity)
+            && (float) $quantity > 0
+            && is_numeric($unitPrice)
+            ? self::multiplyDecimal($quantity, $unitPrice)
+            : null;
+
+        $set('total_price', $totalPrice);
+        $set('total_price_display', $totalPrice === null
+            ? null
+            : PurchaseRequisitionFormatter::rupiah($totalPrice));
     }
 
     private static function multiplyDecimal(string $quantity, string $unitPrice): string
@@ -614,7 +670,7 @@ class PurchaseRequisitionResource extends Resource
             : $record->items->take(2);
 
         $visibleItems = $items->map(function (PurchaseRequisitionItem $item): string {
-            $quantity = rtrim(rtrim(number_format((float) $item->quantity, 6, '.', ''), '0'), '.');
+            $quantity = PurchaseRequisitionFormatter::quantity($item->quantity);
             $requiredDate = $item->required_date?->format('d/m/Y');
             $line = e($item->item_name) . ' &mdash; ' . e(trim("{$quantity} {$item->item_unit_name}"));
 

@@ -4,8 +4,10 @@ namespace App\Filament\Resources\PurchaseRequisitionResource\Pages;
 
 use App\Filament\Resources\PurchaseRequisitionResource;
 use App\Models\AccurateItem;
+use App\Models\AccurateItemUnit;
 use App\Models\PurchaseRequisition;
 use App\Services\PurchaseRequisitions\UpdateLocalPurchaseRequisition;
+use App\Support\PurchaseRequisitionFormatter;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
@@ -35,22 +37,56 @@ class EditPurchaseRequisition extends EditRecord
         /** @var PurchaseRequisition $record */
         $record = $this->record->loadMissing('items');
 
+        $accurateItemIds = $record->items
+            ->pluck('item_accurate_id')
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+        $accurateItemsByAccurateId = $accurateItemIds->isEmpty()
+            ? collect()
+            : AccurateItem::query()
+                ->whereIn('accurate_id', $accurateItemIds)
+                ->get(['id', 'accurate_id', 'no', 'name'])
+                ->keyBy('accurate_id');
+        $unitOptionsByAccurateItemId = $accurateItemIds->isEmpty()
+            ? []
+            : AccurateItemUnit::query()
+                ->whereIn('item_accurate_id', $accurateItemIds)
+                ->orderBy('position')
+                ->get(['item_accurate_id', 'item_unit_name', 'item_unit_accurate_id'])
+                ->groupBy('item_accurate_id')
+                ->map(fn ($units): array => $units
+                    ->mapWithKeys(fn (AccurateItemUnit $unit): array => [
+                        $unit->item_unit_accurate_id => $unit->item_unit_name,
+                    ])
+                    ->all())
+                ->all();
+
         $data['requisition_type_display'] = 'Beli Barang';
         $data['branch_display'] = $record->branch_name;
-        $data['items'] = $record->items->map(fn($item): array => [
-            'accurate_item_id' => $item->accurate_item_id ?: AccurateItem::query()
-                ->where('accurate_id', $item->item_accurate_id)
-                ->value('id'),
-            'item_no_display' => $item->item_no,
-            'quantity' => $item->quantity,
-            'item_unit_accurate_id' => $item->item_unit_accurate_id,
-            'required_date' => $item->required_date,
-            'note' => $item->note,
-            'latest_purchase_unit_price' => $item->latest_purchase_unit_price,
-            'total_price' => $item->total_price,
-            'latest_price_display' => 'Rp ' . number_format((float) $item->latest_purchase_unit_price, 0, ',', '.'),
-            'total_price_display' => 'Rp ' . number_format((float) $item->total_price, 0, ',', '.'),
-        ])->values()->all();
+        $data['items'] = $record->items->map(function ($item) use ($accurateItemsByAccurateId, $unitOptionsByAccurateItemId): array {
+            $accurateItem = $accurateItemsByAccurateId->get((int) $item->item_accurate_id);
+            $unitOptions = $unitOptionsByAccurateItemId[(int) $item->item_accurate_id] ?? [];
+
+            return [
+                'accurate_item_id' => $item->accurate_item_id ?: $accurateItem?->id,
+                'accurate_item_label_display' => $accurateItem
+                    ? trim(($accurateItem->no ? "{$accurateItem->no} - " : '') . (string) $accurateItem->name)
+                    : null,
+                'item_no_display' => $item->item_no,
+                'unit_options' => $unitOptions,
+                'unit_options_available' => $unitOptions !== [],
+                'quantity' => $item->quantity,
+                'item_unit_accurate_id' => $item->item_unit_accurate_id,
+                'required_date' => $item->required_date,
+                'note' => $item->note,
+                'latest_purchase_unit_price' => $item->latest_purchase_unit_price,
+                'total_price' => $item->total_price,
+                'latest_price_display' => PurchaseRequisitionFormatter::rupiah($item->latest_purchase_unit_price),
+                'total_price_display' => PurchaseRequisitionFormatter::rupiah($item->total_price),
+            ];
+        })->values()->all();
 
         return $data;
     }

@@ -14,6 +14,7 @@ use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
@@ -28,6 +29,7 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
 
         Schema::dropIfExists('purchase_requisition_items');
         Schema::dropIfExists('purchase_requisitions');
+        Schema::dropIfExists('purchase_item_cost_values');
         Schema::dropIfExists('purchase_item_latest_prices');
         Schema::dropIfExists('accurate_item_units');
         Schema::dropIfExists('accurate_items');
@@ -106,6 +108,15 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('purchase_item_cost_values', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('accurate_item_id')->nullable();
+            $table->unsignedBigInteger('item_accurate_id');
+            $table->unsignedBigInteger('item_unit_accurate_id');
+            $table->decimal('unit_price', 24, 8)->default(0);
+            $table->timestamps();
+        });
+
         Schema::create('purchase_requisitions', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id')->nullable();
@@ -169,6 +180,7 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
     {
         Schema::dropIfExists('purchase_requisition_items');
         Schema::dropIfExists('purchase_requisitions');
+        Schema::dropIfExists('purchase_item_cost_values');
         Schema::dropIfExists('purchase_item_latest_prices');
         Schema::dropIfExists('accurate_item_units');
         Schema::dropIfExists('accurate_items');
@@ -283,6 +295,8 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
 
         $form = Livewire::test(CreatePurchaseRequisition::class)
             ->set('data', $data)
+            ->set('data.items.0.item_unit_accurate_id', null)
+            ->set('data.items.0.item_unit_accurate_id', 1)
             ->set('data.items.0.quantity', '1200');
 
         $this->assertMatchesRegularExpression(
@@ -307,6 +321,10 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
 
         $form = Livewire::test(CreatePurchaseRequisition::class)
             ->set('data', $data)
+            ->set('data.items.0.item_unit_accurate_id', null)
+            ->set('data.items.0.item_unit_accurate_id', 1)
+            ->set('data.items.1.item_unit_accurate_id', null)
+            ->set('data.items.1.item_unit_accurate_id', 1)
             ->set('data.items.0.quantity', '1.234567')
             ->set('data.items.1.quantity', '0.123456');
 
@@ -321,6 +339,147 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
         $this->assertSame(['1.234567', '0.123456'], $quantities);
         $totals = PurchaseRequisition::query()->firstOrFail()->items()->orderBy('id')->pluck('total_price')->all();
         $this->assertSame(['1.52415677', '0.15241481'], $totals);
+    }
+
+    public function test_item_and_unit_changes_resolve_price_again_and_submission_ignores_tampered_price_state(): void
+    {
+        $firstItem = $this->seedLocalDependencies();
+        $secondItem = AccurateItem::create([
+            'accurate_id' => 100230,
+            'no' => '1002.30',
+            'name' => 'Item Kedua',
+            'raw' => [],
+        ]);
+        AccurateItemUnit::create([
+            'accurate_item_id' => $secondItem->id,
+            'item_accurate_id' => $secondItem->accurate_id,
+            'item_no' => $secondItem->no,
+            'item_name' => $secondItem->name,
+            'item_unit_accurate_id' => 2,
+            'item_unit_name' => 'box',
+            'position' => 1,
+            'source' => 'accurate_item_detail',
+        ]);
+        PurchaseItemLatestPrice::create([
+            'accurate_item_id' => $secondItem->id,
+            'item_accurate_id' => $secondItem->accurate_id,
+            'item_no' => $secondItem->no,
+            'item_name' => $secondItem->name,
+            'item_unit_accurate_id' => 2,
+            'item_unit_name' => 'box',
+            'unit_price' => '2500.12500000',
+            'purchase_order_accurate_id' => 8002,
+            'purchase_order_number' => 'PI.2026.08.00002',
+            'purchase_order_date' => '2026-08-21',
+            'purchase_order_detail_id' => 11,
+        ]);
+
+        $data = $this->formData($firstItem);
+        $data['items'][0]['quantity'] = '1200';
+        $form = Livewire::test(CreatePurchaseRequisition::class)
+            ->set('data', $data)
+            ->set('data.items.0.accurate_item_id', $secondItem->id);
+
+        $this->assertNull($form->get('data.items.0.item_unit_accurate_id'));
+        $this->assertNull($form->get('data.items.0.latest_purchase_unit_price'));
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $form->set('data.items.0.item_unit_accurate_id', 2);
+        $unitChangeQueries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $priceLookups = array_filter(
+            $unitChangeQueries,
+            fn (array $query): bool => str_starts_with($query['query'], 'select * from "purchase_item_latest_prices"'),
+        );
+        $this->assertCount(1, $priceLookups);
+        $this->assertSame('2500.12500000', $form->get('data.items.0.latest_purchase_unit_price'));
+        $this->assertSame('3000150.00000000', $form->get('data.items.0.total_price'));
+        $this->assertSame('Rp 2.500,13', $form->get('data.items.0.latest_price_display'));
+        $this->assertSame('Rp 3.000.150,00', $form->get('data.items.0.total_price_display'));
+        $this->assertSame('1200', $form->get('data.items.0.quantity'));
+
+        $form
+            ->set('data.items.0.latest_purchase_unit_price', '0.00000001')
+            ->set('data.items.0.total_price', '0.00000001')
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $savedItem = PurchaseRequisition::query()->firstOrFail()->items()->firstOrFail();
+        $this->assertSame(100230, $savedItem->item_accurate_id);
+        $this->assertSame(2, $savedItem->item_unit_accurate_id);
+        $this->assertSame('1200.000000', $savedItem->quantity);
+        $this->assertSame('2500.12500000', $savedItem->latest_purchase_unit_price);
+        $this->assertSame('3000150.00000000', $savedItem->total_price);
+        $this->assertSame('PI.2026.08.00002', $savedItem->source_purchase_order_number);
+    }
+
+    public function test_unit_change_uses_cost_value_fallback_when_purchase_invoice_is_outside_window(): void
+    {
+        $item = $this->seedLocalDependencies();
+        PurchaseItemLatestPrice::query()->firstOrFail()->update(['purchase_order_date' => '2024-01-01']);
+        \App\Models\PurchaseItemCostValue::query()->create([
+            'accurate_item_id' => $item->id,
+            'item_accurate_id' => $item->accurate_id,
+            'item_unit_accurate_id' => 1,
+            'unit_price' => '987.65432100',
+        ]);
+        $data = $this->formData($item);
+        $data['items'][0]['quantity'] = '1.5';
+
+        $form = Livewire::test(CreatePurchaseRequisition::class)
+            ->set('data', $data)
+            ->set('data.items.0.item_unit_accurate_id', null)
+            ->set('data.items.0.item_unit_accurate_id', 1);
+
+        $this->assertSame('987.65432100', $form->get('data.items.0.latest_purchase_unit_price'));
+        $this->assertSame('1481.48148150', $form->get('data.items.0.total_price'));
+
+        $form->call('create')->assertHasNoFormErrors();
+
+        $savedItem = PurchaseRequisition::query()->firstOrFail()->items()->firstOrFail();
+        $this->assertSame('987.65432100', $savedItem->latest_purchase_unit_price);
+        $this->assertSame('1481.48148150', $savedItem->total_price);
+    }
+
+    public function test_quantity_updates_skip_unchanged_price_resolution_for_single_and_multiple_rows(): void
+    {
+        $item = $this->seedLocalDependencies();
+        $singleRow = $this->formData($item);
+        $multiRow = $singleRow;
+        $multiRow['items'][] = $multiRow['items'][0];
+
+        $measure = function (array $data): array {
+            $form = Livewire::test(CreatePurchaseRequisition::class)->set('data', $data);
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            $form->set('data.items.0.quantity', '2.5');
+            $queries = DB::getQueryLog();
+            DB::disableQueryLog();
+
+            return $queries;
+        };
+
+        $singleQueries = $measure($singleRow);
+        $multipleQueries = $measure($multiRow);
+
+        $priceQueries = fn (array $queries): array => array_filter(
+            $queries,
+            fn (array $query): bool => str_contains($query['query'], 'purchase_item_latest_prices')
+                || str_contains($query['query'], 'purchase_item_cost_values'),
+        );
+        $itemFetchQueries = fn (array $queries): array => array_filter(
+            $queries,
+            fn (array $query): bool => str_starts_with($query['query'], 'select * from "accurate_items"'),
+        );
+
+        $this->assertSame(2, count($singleQueries));
+        $this->assertSame(2, count($multipleQueries));
+        $this->assertSame([], array_values($priceQueries($singleQueries)));
+        $this->assertSame([], array_values($priceQueries($multipleQueries)));
+        $this->assertSame([], array_values($itemFetchQueries($singleQueries)));
+        $this->assertSame([], array_values($itemFetchQueries($multipleQueries)));
     }
 
     public function test_create_page_renders_submit_label_without_exposing_credentials(): void
@@ -384,6 +543,7 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
             'description' => 'Outlet A',
             'items' => [[
                 'accurate_item_id' => $item->id,
+                'unit_options_available' => true,
                 'item_unit_accurate_id' => 1,
                 'quantity' => '1.000000',
                 'required_date' => '2026-08-27',

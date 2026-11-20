@@ -9,6 +9,7 @@ use App\Filament\Resources\PurchaseRequisitionLogResource\Pages\ListPurchaseRequ
 use App\Filament\Resources\PurchaseRequisitionLogResource\Pages;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
+use App\Support\PurchaseRequisitionFormatter;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -112,7 +113,7 @@ class PurchaseRequisitionLogResource extends Resource
                     ->wrap(),
                 TextColumn::make('items_count')
                     ->label('Jumlah Item')
-                    ->numeric()
+                    ->formatStateUsing(fn($state): string => PurchaseRequisitionFormatter::integer($state))
                     ->sortable(),
                 TextColumn::make('items_total_price')
                     ->label('Total Referensi')
@@ -247,7 +248,7 @@ class PurchaseRequisitionLogResource extends Resource
             : $record->items->take(2);
 
         $visibleItems = $items->map(function (PurchaseRequisitionItem $item): string {
-            $quantity = rtrim(rtrim(number_format((float) $item->quantity, 6, '.', ''), '0'), '.');
+            $quantity = PurchaseRequisitionFormatter::quantity($item->quantity);
 
             return e($item->item_name) . ' ' . e(trim("{$quantity} {$item->item_unit_name}"));
         });
@@ -281,7 +282,7 @@ class PurchaseRequisitionLogResource extends Resource
 
     private static function rupiah(mixed $value): string
     {
-        return 'Rp ' . number_format((float) $value, 0, ',', '.');
+        return PurchaseRequisitionFormatter::rupiah($value);
     }
 
     public static function lastEditSummary(PurchaseRequisition $record): string

@@ -211,10 +211,10 @@ class PurchaseRequisitionLogResourceTest extends TestCase
             ->assertSee('PR.2026.00001')
             ->assertSee('Kantor Pusat')
             ->assertSee('Outlet A')
-            ->assertSee('Alchemy 200gr 2 pcs')
-            ->assertSee('Dori 500 3 grm')
+            ->assertSee('Alchemy 200gr 2,000000 pcs')
+            ->assertSee('Dori 500 3,000000 grm')
             ->assertSee('2')
-            ->assertSee('Rp 240.000')
+            ->assertSee('Rp 240.000,00')
             ->assertSee('Perlu Review');
     }
 
@@ -250,7 +250,19 @@ class PurchaseRequisitionLogResourceTest extends TestCase
             'record' => $record->fresh()->load(['rejecter', 'user', 'items']),
         ])->render();
 
-        foreach (['Snapshot Creator', 'PR.2026.00002', '12345', 'Berhasil', 'Alchemy 200gr', '100069', 'Butuh cepat', 'PO.2026.08.00170'] as $text) {
+        foreach ([
+            'Snapshot Creator',
+            'PR.2026.00002',
+            '12345',
+            'Berhasil',
+            'Alchemy 200gr',
+            '100069',
+            '2,000000',
+            'Rp 150.000,00',
+            'Rp 150.000,00',
+            'Butuh cepat',
+            'PO.2026.08.00170',
+        ] as $text) {
             $this->assertStringContainsString($text, $detail);
         }
 
@@ -373,7 +385,9 @@ class PurchaseRequisitionLogResourceTest extends TestCase
         $this->assertStringContainsString('+23 barang lainnya', PurchaseRequisitionLogResource::itemSummary($logListRecords->first()));
 
         $summaryMethod = new \ReflectionMethod(PurchaseRequisitionResource::class, 'requestSummary');
-        $this->assertStringContainsString('+ 23 barang lainnya', $summaryMethod->invoke(null, $normalListRecords->first()));
+        $summary = $summaryMethod->invoke(null, $normalListRecords->first());
+        $this->assertStringContainsString('+ 23 barang lainnya', $summary);
+        $this->assertStringContainsString('1,000000', $summary);
 
         $withoutHistory = $this->createPurchaseRequisition(null, ['description' => 'No history']);
         $historyHtml = null;

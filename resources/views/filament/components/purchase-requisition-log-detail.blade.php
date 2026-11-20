@@ -1,7 +1,8 @@
 @php
     use App\Filament\Resources\PurchaseRequisitionLogResource;
+    use App\Support\PurchaseRequisitionFormatter;
 
-    $currency = fn ($value) => 'Rp ' . number_format((float) $value, 0, ',', '.');
+    $currency = fn ($value) => PurchaseRequisitionFormatter::rupiah($value);
 @endphp
 
 <div class="space-y-4">
@@ -103,7 +104,7 @@
                     <tr>
                         <td class="px-3 py-2 text-gray-950 dark:text-white">{{ $item->item_name }}</td>
                         <td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ $item->item_no }}</td>
-                        <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-300">{{ rtrim(rtrim(number_format((float) $item->quantity, 6, '.', ''), '0'), '.') }}</td>
+                        <td class="px-3 py-2 text-right text-gray-700 dark:text-gray-300">{{ PurchaseRequisitionFormatter::quantity($item->quantity) }}</td>
                         <td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ $item->item_unit_name }}</td>
                         <td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ $item->required_date?->format('d/m/Y') ?? '-' }}</td>
                         <td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ $item->note ?: '-' }}</td>
