@@ -90,7 +90,8 @@ class PurchaseRequisitionResource extends Resource
                             ? null
                             : 'Cabang Kantor Pusat belum tersedia di cache lokal.'),
                 ])
-                ->columns(2),
+                ->columns(2)
+                ->columnSpanFull(),
 
             Section::make('Detail Barang')
                 ->schema([
@@ -178,7 +179,8 @@ class PurchaseRequisitionResource extends Resource
                         ->addActionLabel('Tambah Barang')
                         ->reorderable(false)
                         ->columnSpanFull(),
-                ]),
+                ])
+                ->columnSpanFull(),
         ]);
     }
 
@@ -393,7 +395,8 @@ class PurchaseRequisitionResource extends Resource
                             TextEntry::make('accurate_number')->label('Nomor Accurate')->placeholder('-'),
                             TextEntry::make('user.name')->label('Dibuat Oleh')->placeholder('-'),
                         ]),
-                ]),
+                ])
+                ->columnSpanFull(),
             Section::make('Detail Barang')
                 ->schema([
                     RepeatableEntry::make('items')
@@ -428,7 +431,8 @@ class PurchaseRequisitionResource extends Resource
                                 ->columnStart(['xl' => 4]),
                         ])
                         ->columnSpanFull(),
-                ]),
+                ])
+                ->columnSpanFull(),
             Section::make('Penolakan')
                 ->visible(fn(PurchaseRequisition $record): bool => $record->status === 'cancelled' || filled($record->rejected_at))
                 ->schema([
@@ -439,7 +443,8 @@ class PurchaseRequisitionResource extends Resource
                             TextEntry::make('rejected_at')->label('Tanggal Ditolak')->dateTime('d/m/Y H:i')->placeholder('-'),
                             TextEntry::make('rejection_reason')->label('Alasan Penolakan')->placeholder('-')->columnSpanFull(),
                         ]),
-                ]),
+                ])
+                ->columnSpanFull(),
         ]);
     }
 
