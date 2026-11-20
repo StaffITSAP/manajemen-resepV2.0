@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PurchaseRequisition extends Model
 {
@@ -50,9 +51,19 @@ class PurchaseRequisition extends Model
         return $this->hasMany(PurchaseRequisitionItem::class, 'purchase_requisition_id');
     }
 
+    public function summaryItems(): HasMany
+    {
+        return $this->items()->orderBy('id')->limit(2);
+    }
+
     public function activityLogs(): HasMany
     {
         return $this->hasMany(PurchaseRequisitionActivityLog::class);
+    }
+
+    public function latestActivityLog(): HasOne
+    {
+        return $this->hasOne(PurchaseRequisitionActivityLog::class)->latestOfMany('created_at');
     }
 
     public function scopeVisibleTo(Builder $query, User $user): Builder

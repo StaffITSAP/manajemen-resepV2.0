@@ -208,7 +208,7 @@ class PurchaseRequisitionResource extends Resource
                     ->wrap(),
                 TextColumn::make('estimated_total')
                     ->label('Nilai Estimasi')
-                    ->state(fn(PurchaseRequisition $record): float => (float) $record->items->sum('total_price'))
+                    ->state(fn(PurchaseRequisition $record): float => (float) ($record->items_total_price ?? 0))
                     ->formatStateUsing(fn(float $state): string => 'Rp. ' . number_format($state, 2, '.', ','))
                     ->alignRight(),
                 TextColumn::make('status_summary')
@@ -451,7 +451,10 @@ class PurchaseRequisitionResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = static::baseEloquentQuery();
+        $query = parent::getEloquentQuery()
+            ->with(['approver', 'branch', 'rejecter', 'user', 'summaryItems'])
+            ->withCount('items')
+            ->withSum('items as items_total_price', 'total_price');
         $user = auth()->user();
 
         return $user ? $query->visibleTo($user) : $query->whereRaw('0 = 1');
@@ -606,7 +609,11 @@ class PurchaseRequisitionResource extends Resource
 
     private static function requestSummary(PurchaseRequisition $record): string
     {
-        $visibleItems = $record->items->take(2)->map(function (PurchaseRequisitionItem $item): string {
+        $items = $record->relationLoaded('summaryItems')
+            ? $record->summaryItems
+            : $record->items->take(2);
+
+        $visibleItems = $items->map(function (PurchaseRequisitionItem $item): string {
             $quantity = rtrim(rtrim(number_format((float) $item->quantity, 6, '.', ''), '0'), '.');
             $requiredDate = $item->required_date?->format('d/m/Y');
             $line = e($item->item_name) . ' &mdash; ' . e(trim("{$quantity} {$item->item_unit_name}"));
@@ -620,7 +627,10 @@ class PurchaseRequisitionResource extends Resource
             return '-';
         }
 
-        $remaining = $record->items->count() - $visibleItems->count();
+        $totalItems = $record->relationLoaded('summaryItems')
+            ? (int) ($record->items_count ?? $record->summaryItems->count())
+            : $record->items->count();
+        $remaining = $totalItems - $visibleItems->count();
         if ($remaining > 0) {
             $visibleItems->push('<span class="text-xs text-gray-500">+ ' . $remaining . ' barang lainnya</span>');
         }

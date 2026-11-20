@@ -154,10 +154,12 @@ class PurchaseRequisitionLogResource extends Resource
                 Action::make('editHistory')
                     ->label('Riwayat Edit')
                     ->icon('heroicon-o-clock')
-                    ->visible(fn(PurchaseRequisition $record): bool => $record->activityLogs->isNotEmpty())
+                    ->visible(fn(PurchaseRequisition $record): bool => $record->latestActivityLog !== null)
                     ->modalHeading(fn(PurchaseRequisition $record): string => 'Riwayat Edit PR #' . $record->id)
                     ->modalContent(fn(PurchaseRequisition $record) => view('filament.components.purchase-requisition-edit-history', [
-                        'record' => $record->loadMissing(['activityLogs.user']),
+                        'record' => $record->loadMissing([
+                            'activityLogs' => fn ($query) => $query->latest()->with('user'),
+                        ]),
                     ]))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup')
@@ -179,8 +181,7 @@ class PurchaseRequisitionLogResource extends Resource
         }
 
         return $query
-            ->with(['user', 'items'])
-            ->with(['activityLogs' => fn($query) => $query->latest()->with('user')])
+            ->with(['user', 'summaryItems', 'latestActivityLog.user'])
             ->withCount('items')
             ->withSum('items as items_total_price', 'total_price');
     }
@@ -241,7 +242,11 @@ class PurchaseRequisitionLogResource extends Resource
 
     public static function itemSummary(PurchaseRequisition $record): string
     {
-        $visibleItems = $record->items->take(2)->map(function (PurchaseRequisitionItem $item): string {
+        $items = $record->relationLoaded('summaryItems')
+            ? $record->summaryItems
+            : $record->items->take(2);
+
+        $visibleItems = $items->map(function (PurchaseRequisitionItem $item): string {
             $quantity = rtrim(rtrim(number_format((float) $item->quantity, 6, '.', ''), '0'), '.');
 
             return e($item->item_name) . ' ' . e(trim("{$quantity} {$item->item_unit_name}"));
@@ -251,7 +256,10 @@ class PurchaseRequisitionLogResource extends Resource
             return '-';
         }
 
-        $remaining = $record->items->count() - $visibleItems->count();
+        $totalItems = $record->relationLoaded('summaryItems')
+            ? (int) ($record->items_count ?? $record->summaryItems->count())
+            : $record->items->count();
+        $remaining = $totalItems - $visibleItems->count();
         if ($remaining > 0) {
             $visibleItems->push('<span class="text-xs text-gray-500">+' . $remaining . ' barang lainnya</span>');
         }
@@ -278,7 +286,9 @@ class PurchaseRequisitionLogResource extends Resource
 
     public static function lastEditSummary(PurchaseRequisition $record): string
     {
-        $log = $record->activityLogs->first();
+        $log = $record->relationLoaded('latestActivityLog')
+            ? $record->latestActivityLog
+            : $record->latestActivityLog()->with('user')->first();
 
         if (! $log) {
             return '-';

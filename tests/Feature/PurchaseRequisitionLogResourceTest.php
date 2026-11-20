@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\PurchaseRequisitionLogResource;
 use App\Filament\Resources\PurchaseRequisitionLogResource\Pages\ListPurchaseRequisitionLogs;
+use App\Filament\Resources\PurchaseRequisitionResource;
 use App\Models\PurchaseRequisition;
 use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
@@ -12,6 +13,7 @@ use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -267,11 +269,136 @@ class PurchaseRequisitionLogResourceTest extends TestCase
         $query = PurchaseRequisitionLogResource::getEloquentQuery();
 
         $this->assertArrayHasKey('user', $query->getEagerLoads());
-        $this->assertArrayHasKey('items', $query->getEagerLoads());
+        $this->assertArrayHasKey('summaryItems', $query->getEagerLoads());
+        $this->assertArrayHasKey('latestActivityLog.user', $query->getEagerLoads());
+        $this->assertArrayNotHasKey('items', $query->getEagerLoads());
+        $this->assertArrayNotHasKey('activityLogs', $query->getEagerLoads());
 
         $sql = $query->toSql();
         $this->assertStringContainsString('items_count', $sql);
         $this->assertStringContainsString('items_total_price', $sql);
+    }
+
+    public function test_list_queries_load_item_previews_and_latest_activity_only(): void
+    {
+        $this->actingAs($this->createUser('superadmin', 'Performance Admin'));
+        $records = [];
+
+        for ($recordIndex = 1; $recordIndex <= 3; $recordIndex++) {
+            $record = $this->createPurchaseRequisition(null, ['description' => "Outlet {$recordIndex}"]);
+            $records[] = $record;
+
+            for ($itemIndex = 1; $itemIndex <= 25; $itemIndex++) {
+                $this->createItem($record, "Item {$itemIndex}", '1.000000', 'pcs', '100.00000000');
+            }
+
+            for ($activityIndex = 1; $activityIndex <= 40; $activityIndex++) {
+                $record->activityLogs()->create([
+                    'action' => "edit-{$activityIndex}",
+                    'summary' => "Activity {$activityIndex}",
+                    'created_at' => now()->addSeconds($activityIndex),
+                    'updated_at' => now()->addSeconds($activityIndex),
+                ]);
+            }
+        }
+
+        DB::enableQueryLog();
+        $baselineNormalListRecords = PurchaseRequisition::query()
+            ->visibleTo(auth()->user())
+            ->with(['approver', 'branch', 'rejecter', 'user', 'items'])
+            ->limit(3)
+            ->get();
+        $baselineNormalListQueries = DB::getQueryLog();
+        DB::flushQueryLog();
+
+        $normalListRecords = PurchaseRequisitionResource::getEloquentQuery()->limit(3)->get();
+        $normalListQueries = DB::getQueryLog();
+        DB::flushQueryLog();
+
+        $baselineLogListRecords = PurchaseRequisition::query()
+            ->visibleTo(auth()->user())
+            ->with(['user', 'items'])
+            ->with(['activityLogs' => fn ($query) => $query->latest()->with('user')])
+            ->withCount('items')
+            ->withSum('items as items_total_price', 'total_price')
+            ->limit(3)
+            ->get();
+        $baselineLogListQueries = DB::getQueryLog();
+        DB::flushQueryLog();
+
+        $logListRecords = PurchaseRequisitionLogResource::getEloquentQuery()->limit(3)->get();
+        $logListQueries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $baselineNormalItemLoads = array_filter($baselineNormalListQueries, fn (array $query): bool =>
+            str_starts_with($query['query'], 'select * from "purchase_requisition_items"')
+        );
+        $itemLoadsForNormalList = array_filter($normalListQueries, fn (array $query): bool =>
+            str_contains($query['query'], 'row_number() over (partition by "purchase_requisition_items"')
+        );
+        $baselineLogItemLoads = array_filter($baselineLogListQueries, fn (array $query): bool =>
+            str_starts_with($query['query'], 'select * from "purchase_requisition_items"')
+        );
+        $itemLoadsForLogList = array_filter($logListQueries, fn (array $query): bool =>
+            str_contains($query['query'], 'row_number() over (partition by "purchase_requisition_items"')
+        );
+        $baselineActivityLoadsForLogList = array_filter($baselineLogListQueries, fn (array $query): bool =>
+            str_starts_with($query['query'], 'select * from "purchase_requisition_activity_logs"')
+        );
+        $activityLoadsForLogList = array_filter($logListQueries, fn (array $query): bool =>
+            str_starts_with($query['query'], 'select "purchase_requisition_activity_logs".*')
+        );
+
+        $this->assertCount(1, $baselineNormalItemLoads);
+        $this->assertCount(1, $itemLoadsForNormalList);
+        $this->assertCount(1, $baselineLogItemLoads);
+        $this->assertCount(1, $itemLoadsForLogList);
+        $this->assertCount(1, $baselineActivityLoadsForLogList);
+        $this->assertCount(1, $activityLoadsForLogList);
+        $this->assertSame(75, $baselineNormalListRecords->sum(fn (PurchaseRequisition $record): int => $record->items->count()));
+        $this->assertSame(6, $normalListRecords->sum(fn (PurchaseRequisition $record): int => $record->summaryItems->count()));
+        $this->assertSame(75, $baselineLogListRecords->sum(fn (PurchaseRequisition $record): int => $record->items->count()));
+        $this->assertSame(6, $logListRecords->sum(fn (PurchaseRequisition $record): int => $record->summaryItems->count()));
+        $this->assertSame(75, $normalListRecords->sum('items_count'));
+        $this->assertSame(75, $logListRecords->sum('items_count'));
+        $this->assertSame(120, $baselineLogListRecords->sum(fn (PurchaseRequisition $record): int => $record->activityLogs->count()));
+        $this->assertSame(3, $logListRecords->filter(fn (PurchaseRequisition $record): bool => $record->latestActivityLog !== null)->count());
+        $this->assertSame('edit-40', $logListRecords->first()->latestActivityLog->action);
+        $this->assertStringContainsString('edit-40', PurchaseRequisitionLogResource::lastEditSummary($logListRecords->first()));
+        $this->assertStringNotContainsString('edit-1', PurchaseRequisitionLogResource::lastEditSummary($logListRecords->first()));
+        $this->assertFalse($logListRecords->first()->relationLoaded('items'));
+        $this->assertFalse($logListRecords->first()->relationLoaded('activityLogs'));
+        $this->assertSame(2500.0, (float) $normalListRecords->first()->items_total_price);
+        $this->assertSame(2500.0, (float) $logListRecords->first()->items_total_price);
+        $this->assertStringContainsString('+23 barang lainnya', PurchaseRequisitionLogResource::itemSummary($logListRecords->first()));
+
+        $summaryMethod = new \ReflectionMethod(PurchaseRequisitionResource::class, 'requestSummary');
+        $this->assertStringContainsString('+ 23 barang lainnya', $summaryMethod->invoke(null, $normalListRecords->first()));
+
+        $withoutHistory = $this->createPurchaseRequisition(null, ['description' => 'No history']);
+        $historyHtml = null;
+        $detailHtml = null;
+
+        Livewire::test(ListPurchaseRequisitionLogs::class)
+            ->assertTableActionVisible('editHistory', $records[0])
+            ->assertTableActionHidden('editHistory', $withoutHistory)
+            ->assertTableActionExists('editHistory', function (Action $action) use (&$historyHtml): bool {
+                $content = $action->getModalContent();
+                $historyHtml = $content?->render();
+
+                return $content instanceof \Illuminate\Contracts\Support\Htmlable;
+            }, $records[0])
+            ->assertTableActionExists('detail', function (Action $action) use (&$detailHtml): bool {
+                $content = $action->getModalContent();
+                $detailHtml = $content?->render();
+
+                return $content instanceof \Illuminate\Contracts\Support\Htmlable;
+            }, $records[0]);
+
+        $this->assertStringContainsString('Activity 1', $historyHtml);
+        $this->assertStringContainsString('Activity 40', $historyHtml);
+        $this->assertLessThan(strpos($historyHtml, 'Activity 1'), strpos($historyHtml, 'Activity 40'));
+        $this->assertStringContainsString('Item 25', $detailHtml);
     }
 
     private function createUser(string $roleName, string $name): User
