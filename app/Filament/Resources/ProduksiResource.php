@@ -2,13 +2,44 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Repeater;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\Utilities\Get;
+use App\Models\ItemProduksi;
+use Filament\Forms\Components\Placeholder;
+use Filament\Schemas\Components\Fieldset;
+use Filament\Forms\Components\Toggle;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\Filter;
+use Filament\Actions\ActionGroup;
+use Filament\Actions\EditAction;
+use Filament\Actions\Action;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Tables\Enums\RecordActionsPosition;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\RestoreBulkAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use App\Filament\Resources\ProduksiResource\RelationManagers\LogPerubahanRelationManager;
+use App\Filament\Resources\ProduksiResource\RelationManagers\ItemProduksiRelationManager;
+use App\Filament\Resources\ProduksiResource\RelationManagers\BahanDibutuhkanRelationManager;
+use App\Filament\Resources\ProduksiResource\Pages\ListProduksis;
+use App\Filament\Resources\ProduksiResource\Pages\CreateProduksi;
+use App\Filament\Resources\ProduksiResource\Pages\EditProduksi;
 use App\Filament\Resources\ProduksiResource\Pages;
 use App\Filament\Resources\ProduksiResource\RelationManagers;
 use App\Models\Produksi;
 use App\Models\MasterBarang;
 use App\Models\Resep;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -19,41 +50,35 @@ use App\Exports\ProduksiExport;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\RestoreAction;
 use Maatwebsite\Excel\Facades\Excel;
-use Filament\Tables\Actions\Action;
-use Filament\Forms\Get;
-use Filament\Forms\Set;
-use Filament\Tables\Actions\ActionGroup;
-use Filament\Tables\Actions\EditAction as ActionsEditAction;
-use Filament\Tables\Enums\ActionsPosition;
 use Illuminate\Support\Facades\DB;
 
 class ProduksiResource extends Resource
 {
     protected static ?string $model = Produksi::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-cog';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-cog';
     protected static ?string $navigationLabel = 'Produksi';
-    protected static ?string $navigationGroup = 'Produksi';
+    protected static string | \UnitEnum | null $navigationGroup = 'Produksi';
     protected static ?string $pluralModelLabel = 'Produksi';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Informasi Produksi')
+        return $schema
+            ->components([
+                Section::make('Informasi Produksi')
                     ->schema([
-                        Forms\Components\TextInput::make('nomor_produksi')
+                        TextInput::make('nomor_produksi')
                             ->default('PRD-' . date('Ymd') . '-' . Str::random(4))
                             ->required()
                             ->maxLength(255)
                             ->unique(ignoreRecord: true)
                             ->disabled(fn($context) => $context === 'edit'),
 
-                        Forms\Components\DatePicker::make('tanggal')
+                        DatePicker::make('tanggal')
                             ->required()
                             ->default(now()),
 
-                        Forms\Components\Select::make('status')
+                        Select::make('status')
                             ->required()
                             ->options([
                                 'draft'    => 'Draft',
@@ -64,19 +89,19 @@ class ProduksiResource extends Resource
                             ->default('draft')
                             ->live(),
 
-                        Forms\Components\Textarea::make('catatan')
+                        Textarea::make('catatan')
                             ->maxLength(65535)
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('Item Produksi & Input Aktual')
+                Section::make('Item Produksi & Input Aktual')
                     ->schema([
-                        Forms\Components\Repeater::make('itemProduksi')
+                        Repeater::make('itemProduksi')
                             ->relationship()
                             ->itemLabel(fn(array $state) => 'Item: ' . (optional(MasterBarang::find($state['barang_setengah_jadi_id'] ?? null))->nama ?? '-'))
                             ->schema([
-                                Forms\Components\Select::make('barang_setengah_jadi_id')
+                                Select::make('barang_setengah_jadi_id')
                                     ->label('Barang 1/2 Jadi')
                                     ->required()
                                     ->options(
@@ -97,12 +122,12 @@ class ProduksiResource extends Resource
                                         $jumlahItem = (float) ($resep?->jumlah_barang_setengah_jadi ?? 1);
                                         $set('jumlah', $jumlahItem);
 
-                                        $rows = \App\Models\ItemProduksi::buildBahanFromResep($jumlahItem, (int) $state);
+                                        $rows = ItemProduksi::buildBahanFromResep($jumlahItem, (int) $state);
                                         $set('bahanProduksi', $rows);
                                     })
                                     ->disabled(fn($context) => $context === 'edit'),
 
-                                Forms\Components\TextInput::make('jumlah')
+                                TextInput::make('jumlah')
                                     ->label('Resep')
                                     ->numeric()
                                     ->minValue(0.01)
@@ -112,13 +137,13 @@ class ProduksiResource extends Resource
                                         $barangSJ = $get('barang_setengah_jadi_id');
                                         if (!$barangSJ) return;
 
-                                        $rows = \App\Models\ItemProduksi::buildBahanFromResep((float) $state, (int) $barangSJ);
+                                        $rows = ItemProduksi::buildBahanFromResep((float) $state, (int) $barangSJ);
                                         $set('bahanProduksi', $rows);
                                     })
                                     ->dehydrated(),
 
                                 // TIDAK pakai live/reactive di sini — persis itemProduksi yang kamu mau
-                                Forms\Components\TextInput::make('jumlah_aktual')
+                                TextInput::make('jumlah_aktual')
                                     ->label('Produksi')
                                     ->numeric()
                                     ->minValue(0)
@@ -130,15 +155,15 @@ class ProduksiResource extends Resource
                                 //     ->disabled()
                                 //     ->dehydrated(),
 
-                                Forms\Components\Placeholder::make('satuan_item')
+                                Placeholder::make('satuan_item')
                                     ->label('Satuan')
                                     ->content(function (Get $get) {
                                         $barangId = $get('barang_setengah_jadi_id');
-                                        $barang   = \App\Models\MasterBarang::with('satuan')->find($barangId);
+                                        $barang   = MasterBarang::with('satuan')->find($barangId);
                                         return $barang?->satuan?->nama ?: '-';
                                     }),
 
-                                Forms\Components\Textarea::make('keterangan_aktual')
+                                Textarea::make('keterangan_aktual')
                                     ->label('Keterangan Aktual')
                                     ->maxLength(500)
                                     ->columnSpanFull(),
@@ -146,9 +171,9 @@ class ProduksiResource extends Resource
                                 // =========================
                                 // NESTED: Bahan Produksi
                                 // =========================
-                                Forms\Components\Fieldset::make('Bahan Produksi (otomatis dari resep)')
+                                Fieldset::make('Bahan Produksi (otomatis dari resep)')
                                     ->schema([
-                                        Forms\Components\Repeater::make('bahanProduksi')
+                                        Repeater::make('bahanProduksi')
                                             ->relationship('bahanOtomatis')
                                             // ->default([])
                                             ->minItems(0)
@@ -156,10 +181,10 @@ class ProduksiResource extends Resource
                                             ->deleteAction(fn($action) => $action->requiresConfirmation())
                                             ->columns(12)
                                             ->schema([
-                                                Forms\Components\Select::make('bahan_id')
+                                                Select::make('bahan_id')
                                                     ->label('Bahan')
                                                     ->options(
-                                                        \App\Models\MasterBarang::where(function ($query) {
+                                                        MasterBarang::where(function ($query) {
                                                             $query->where('jenis', 'bahan')
                                                                 ->orWhere('jenis', 'setengah_jadi')
                                                                 ->orWhereNull('jenis');
@@ -170,7 +195,7 @@ class ProduksiResource extends Resource
                                                     ->dehydrated(true)
                                                     ->columnSpan(4),
 
-                                                Forms\Components\TextInput::make('jumlah')
+                                                TextInput::make('jumlah')
                                                     ->label('Resep')
                                                     ->numeric()
                                                     ->disabled()
@@ -178,7 +203,7 @@ class ProduksiResource extends Resource
                                                     ->columnSpan(2),
 
                                                 // ======= TIDAK LIVE / REACTIVE. DIHITUNG OTOMATIS SAAT SIMPAN =======
-                                                Forms\Components\TextInput::make('jumlah_aktual')
+                                                TextInput::make('jumlah_aktual')
                                                     ->label('Takaran Produksi (otomatis)')
                                                     ->numeric()
                                                     ->disabled()          // user tidak bisa edit
@@ -186,7 +211,7 @@ class ProduksiResource extends Resource
                                                     ->placeholder('otomatis saat simpan')
                                                     ->columnSpan(2),
                                                 // ======= NEW: total_produksi (editable oleh user) =======
-                                                Forms\Components\TextInput::make('total_produksi')
+                                                TextInput::make('total_produksi')
                                                     ->label('Total Produksi (manual)')
                                                     ->numeric()
                                                     ->default(0)
@@ -194,11 +219,11 @@ class ProduksiResource extends Resource
                                                     ->step(0.01)
                                                     ->columnSpan(2),
                                                 // === KOLUM BARU: SATUAN (BAHAN) ===
-                                                Forms\Components\Placeholder::make('satuan_bahan')
+                                                Placeholder::make('satuan_bahan')
                                                     ->label('Satuan')
                                                     ->content(function (Get $get) {
                                                         $bahanId = $get('bahan_id');
-                                                        $bahan   = \App\Models\MasterBarang::with('satuan')->find($bahanId);
+                                                        $bahan   = MasterBarang::with('satuan')->find($bahanId);
                                                         return $bahan?->satuan?->nama ?: '-';
                                                     })
                                                     ->columnSpan(2),
@@ -219,7 +244,7 @@ class ProduksiResource extends Resource
                                                 //     ->dehydrated(false)   // akan dihitung di model juga
                                                 //     ->columnSpan(2),
 
-                                                Forms\Components\TextInput::make('keterangan_aktual')
+                                                TextInput::make('keterangan_aktual')
                                                     ->label('Keterangan')
                                                     ->maxLength(500)
                                                     ->columnSpanFull(),
@@ -230,9 +255,9 @@ class ProduksiResource extends Resource
                                     ->columns(1)
                                     ->columnSpanFull(),
                                 // === TOGGLE + FIELDSET MANUAL (BARU) — LAYOUT PERSIS SAMA ===
-                                Forms\Components\Fieldset::make('Bahan Produksi (manual)')
+                                Fieldset::make('Bahan Produksi (manual)')
                                     ->schema([
-                                        Forms\Components\Toggle::make('enable_bahan_tambahan')
+                                        Toggle::make('enable_bahan_tambahan')
                                             ->label('Tambah Bahan?')
                                             ->default(false)
                                             ->reactive()
@@ -242,7 +267,7 @@ class ProduksiResource extends Resource
                                                 }
                                             }),
 
-                                        Forms\Components\Repeater::make('bahanTambahan')
+                                        Repeater::make('bahanTambahan')
                                             ->relationship('bahanTambahan')
                                             ->default([])
                                             ->minItems(0)
@@ -253,10 +278,10 @@ class ProduksiResource extends Resource
                                             ->mutateRelationshipDataBeforeCreateUsing(fn(array $data) => $data + ['is_manual' => true])
                                             ->mutateRelationshipDataBeforeSaveUsing(fn(array $data) => $data + ['is_manual' => true])
                                             ->schema([
-                                                Forms\Components\Select::make('bahan_id')
+                                                Select::make('bahan_id')
                                                     ->label('Bahan')
                                                     ->options(
-                                                        \App\Models\MasterBarang::whereIn('jenis', ['bahan', 'setengah_jadi', 'jadi'])
+                                                        MasterBarang::whereIn('jenis', ['bahan', 'setengah_jadi', 'jadi'])
                                                             ->orWhereNull('jenis')
                                                             ->pluck('nama', 'id')
                                                             ->toArray()
@@ -272,7 +297,7 @@ class ProduksiResource extends Resource
                                                     ->dehydrated(true)
                                                     ->columnSpan(4),
 
-                                                Forms\Components\TextInput::make('jumlah')
+                                                TextInput::make('jumlah')
                                                     ->label('Resep')
                                                     ->numeric()
                                                     ->default(1)   // ✅ default bukan null
@@ -280,7 +305,7 @@ class ProduksiResource extends Resource
                                                     ->dehydrated()
                                                     ->columnSpan(2),
 
-                                                Forms\Components\TextInput::make('jumlah_aktual')
+                                                TextInput::make('jumlah_aktual')
                                                     ->label('Takaran Produksi (otomatis)')
                                                     ->numeric()
                                                     ->disabled()
@@ -288,7 +313,7 @@ class ProduksiResource extends Resource
                                                     ->placeholder('otomatis saat simpan')
                                                     ->columnSpan(2),
 
-                                                Forms\Components\TextInput::make('total_produksi')
+                                                TextInput::make('total_produksi')
                                                     ->label('Total Produksi (manual)')
                                                     ->numeric()
                                                     ->default(0)
@@ -296,16 +321,16 @@ class ProduksiResource extends Resource
                                                     ->step(0.01)
                                                     ->columnSpan(2),
 
-                                                Forms\Components\Placeholder::make('satuan_bahan')
+                                                Placeholder::make('satuan_bahan')
                                                     ->label('Satuan')
                                                     ->content(function (Get $get) {
                                                         $bahanId = $get('bahan_id');
-                                                        $bahan   = \App\Models\MasterBarang::with('satuan')->find($bahanId);
+                                                        $bahan   = MasterBarang::with('satuan')->find($bahanId);
                                                         return $bahan?->satuan?->nama ?: '-';
                                                     })
                                                     ->columnSpan(2),
 
-                                                Forms\Components\TextInput::make('keterangan_aktual')
+                                                TextInput::make('keterangan_aktual')
                                                     ->label('Keterangan')
                                                     ->maxLength(500)
                                                     ->columnSpanFull(),
@@ -343,24 +368,24 @@ class ProduksiResource extends Resource
                 return ProduksiResource::getUrl('edit', ['record' => $record]);
             })
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')
+                TextColumn::make('user.name')
                     ->label('Nama')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('nomor_produksi')
+                TextColumn::make('nomor_produksi')
                     ->label('No. Produksi')
                     ->sortable()
                     ->searchable(),
-                Tables\Columns\TextColumn::make('accurate_number')
+                TextColumn::make('accurate_number')
                     ->searchable()
                     ->label('No. Accurate')
                     ->description(fn(Produksi $record) => ($record->accurate_rollover_number ?? '-')),
-                Tables\Columns\TextColumn::make('tanggal')
+                TextColumn::make('tanggal')
                     ->label('Tanggal')
                     ->date('d F Y')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('barang_setengah_jadi_list')
+                TextColumn::make('barang_setengah_jadi_list')
                     ->label('Barang 1/2 Jadi')
                     ->state(fn(Produksi $r) => $r->barang_setengah_jadi_list)
                     ->html()
@@ -368,15 +393,15 @@ class ProduksiResource extends Resource
                     ->wrap()
                     ->lineClamp(4),
 
-                Tables\Columns\TextColumn::make('bahan_list_db')   // <-- accessor baru
+                TextColumn::make('bahan_list_db')   // <-- accessor baru
                     ->label('Bahan yang Dibutuhkan')
-                    ->state(fn(\App\Models\Produksi $r) => $r->bahan_list_db)
+                    ->state(fn(Produksi $r) => $r->bahan_list_db)
                     ->html()
                     ->formatStateUsing(fn($state) => nl2br(e($state)))
                     ->wrap()
                     ->lineClamp(6),
 
-                Tables\Columns\TextColumn::make('total_rencana_with_unit')
+                TextColumn::make('total_rencana_with_unit')
                     ->label('Resep')
                     ->state(fn(Produksi $r) => $r->total_rencana_with_unit)
                     ->html()
@@ -384,7 +409,7 @@ class ProduksiResource extends Resource
                     ->wrap()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('total_aktual_with_unit')
+                TextColumn::make('total_aktual_with_unit')
                     ->label('Hasil Aktual')
                     ->state(fn(Produksi $r) => $r->total_aktual_with_unit)
                     ->html()
@@ -407,7 +432,7 @@ class ProduksiResource extends Resource
                 //     ->state(fn(\App\Models\Produksi $r) => $r->total_selisih_bahan)
                 //     ->badge()
                 //     ->color(fn($state) => $state > 0 ? 'success' : ($state < 0 ? 'danger' : 'gray')),
-                Tables\Columns\TextColumn::make('status')
+                TextColumn::make('status')
                     ->label('Status')
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
@@ -421,24 +446,24 @@ class ProduksiResource extends Resource
                 //     ->label('Dibuat Oleh')
                 //     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
-                Tables\Filters\TrashedFilter::make(),
-                Tables\Filters\SelectFilter::make('status')
+                TrashedFilter::make(),
+                SelectFilter::make('status')
                     ->options([
                         'draft'    => 'Draft',
                         'diproses' => 'Diproses',
                         'selesai'  => 'Selesai',
                         'batal'    => 'Batal',
                     ]),
-                Tables\Filters\Filter::make('tanggal')
+                Filter::make('tanggal')
                     ->form([
-                        Forms\Components\DatePicker::make('dari_tanggal'),
-                        Forms\Components\DatePicker::make('sampai_tanggal'),
+                        DatePicker::make('dari_tanggal'),
+                        DatePicker::make('sampai_tanggal'),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
@@ -452,9 +477,9 @@ class ProduksiResource extends Resource
                             );
                     }),
             ])
-            ->actions([
+            ->recordActions([
                 ActionGroup::make([
-                    ActionsEditAction::make(),
+                    EditAction::make(),
                     Action::make('input_aktual')
                         ->label('Input Aktual')
                         ->icon('heroicon-o-clipboard-document-check')
@@ -471,7 +496,7 @@ class ProduksiResource extends Resource
                         ->modalContent(fn(Produksi $record) => view('filament.components.produksi-detail', ['record' => $record]))
                         ->modalCancelActionLabel('Tutup')
                         ->modalSubmitAction(false),
-                    Tables\Actions\Action::make('lihat_histori_log')
+                    Action::make('lihat_histori_log')
                         ->label('Lihat Histori Log')
                         ->icon('heroicon-o-clock')
                         ->modalHeading('Histori Log Produksi')
@@ -480,12 +505,12 @@ class ProduksiResource extends Resource
                         ->slideOver()
                         ->modalWidth('7xl')
                         ->modalContent(
-                            fn(\App\Models\Produksi $record) =>
+                            fn(Produksi $record) =>
                             view('filament.components.produksi-log-history', ['produksi' => $record])
                         )
                         ->slideOver()
                         ->modalWidth('screen'),
-                    \Filament\Tables\Actions\DeleteAction::make()
+                    DeleteAction::make()
                         ->requiresConfirmation()
                         ->using(function (Produksi $record) {
                             return DB::transaction(function () use ($record) {
@@ -504,7 +529,7 @@ class ProduksiResource extends Resource
                         }),
 
                     // === RESTORE dengan cascade manual ===
-                    \Filament\Tables\Actions\RestoreAction::make()
+                    RestoreAction::make()
                         ->using(function (Produksi $record) {
                             return DB::transaction(function () use ($record) {
                                 $record->restore(); // parent dulu
@@ -518,7 +543,7 @@ class ProduksiResource extends Resource
                         }),
 
                     // === FORCE DELETE penuh (hard delete) + DB CASCADE safety ===
-                    \Filament\Tables\Actions\ForceDeleteAction::make()
+                    ForceDeleteAction::make()
                         ->requiresConfirmation()
                         ->using(function (Produksi $record) {
                             return DB::transaction(function () use ($record) {
@@ -538,37 +563,37 @@ class ProduksiResource extends Resource
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->color('gray'),
             ])
-            ->actionsPosition(ActionsPosition::BeforeColumns)
+            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
             ->headerActions([
                 Action::make('exportExcel')
                     ->label('Export Excel')
                     ->icon('heroicon-o-arrow-down-tray')
 
                     // Cegah tombol tampil untuk yang tak punya izin
-                    ->visible(fn() => auth()->user()?->can('export', \App\Models\Produksi::class) ?? false)
+                    ->visible(fn() => auth()->user()?->can('export', Produksi::class) ?? false)
 
                     // Tambahan hard-guard saat dieksekusi (kalau ada yg akses pakai URL)
-                    ->authorize(fn() => auth()->user()?->can('export', \App\Models\Produksi::class) ?? false)
+                    ->authorize(fn() => auth()->user()?->can('export', Produksi::class) ?? false)
 
                     ->action(function (array $data) {
                         $user = auth()->user();
-                        abort_unless($user && $user->can('export', \App\Models\Produksi::class), 403);
+                        abort_unless($user && $user->can('export', Produksi::class), 403);
 
-                        return \Maatwebsite\Excel\Facades\Excel::download(
-                            new \App\Exports\ProduksiExport($data['dari_tanggal'] ?? null, $data['sampai_tanggal'] ?? null),
+                        return Excel::download(
+                            new ProduksiExport($data['dari_tanggal'] ?? null, $data['sampai_tanggal'] ?? null),
                             'produksi-export-' . date('Y-m-d') . '.xlsx'
                         );
                     })
-                    ->form([
-                        Forms\Components\DatePicker::make('dari_tanggal')->label('Dari Tanggal'),
-                        Forms\Components\DatePicker::make('sampai_tanggal')->label('Sampai Tanggal'),
+                    ->schema([
+                        DatePicker::make('dari_tanggal')->label('Dari Tanggal'),
+                        DatePicker::make('sampai_tanggal')->label('Sampai Tanggal'),
                     ]),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                    Tables\Actions\RestoreBulkAction::make(),
-                    Tables\Actions\ForceDeleteBulkAction::make(),
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }
@@ -576,18 +601,18 @@ class ProduksiResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\LogPerubahanRelationManager::class,
-            RelationManagers\ItemProduksiRelationManager::class,
-            RelationManagers\BahanDibutuhkanRelationManager::class,
+            LogPerubahanRelationManager::class,
+            ItemProduksiRelationManager::class,
+            BahanDibutuhkanRelationManager::class,
         ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListProduksis::route('/'),
-            'create' => Pages\CreateProduksi::route('/create'),
-            'edit'   => Pages\EditProduksi::route('/{record}'),
+            'index'  => ListProduksis::route('/'),
+            'create' => CreateProduksi::route('/create'),
+            'edit'   => EditProduksi::route('/{record}'),
         ];
     }
 

@@ -2,12 +2,38 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Repeater;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Actions\Action;
+use Filament\Forms\Components\DatePicker;
+use Filament\Actions\ActionGroup;
+use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Tables\Enums\RecordActionsPosition;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\RestoreBulkAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use App\Filament\Resources\ResepResource\RelationManagers\BahanResepRelationManager;
+use App\Filament\Resources\ResepResource\Pages\ListReseps;
+use App\Filament\Resources\ResepResource\Pages\CreateResep;
+use App\Filament\Resources\ResepResource\Pages\EditResep;
 use App\Filament\Resources\ResepResource\Pages;
 use App\Filament\Resources\ResepResource\RelationManagers;
 use App\Models\Resep;
 use App\Models\MasterBarang;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -15,9 +41,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Exports\ResepExport;
 use Maatwebsite\Excel\Facades\Excel;
-use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\Column;
-use Filament\Tables\Enums\ActionsPosition;
 use Illuminate\Validation\Rules\Unique;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Gate;
@@ -28,18 +52,18 @@ class ResepResource extends Resource
 {
     protected static ?string $model = Resep::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-document-text';
-    protected static ?string $navigationGroup = 'Produksi';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-document-text';
+    protected static string | \UnitEnum | null $navigationGroup = 'Produksi';
     protected static ?string $navigationLabel = 'Resep';
     protected static ?int $navigationSort = 2;
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Informasi Resep')
+        return $schema
+            ->components([
+                Section::make('Informasi Resep')
                     ->schema([
-                        Forms\Components\TextInput::make('nama')
+                        TextInput::make('nama')
                             ->label('Nama Resep')
                             ->required()
                             ->maxLength(255)
@@ -54,7 +78,7 @@ class ResepResource extends Resource
                             ])
                             ->validationAttribute('Nama Resep'),
 
-                        Forms\Components\Select::make('barang_setengah_jadi_id')
+                        Select::make('barang_setengah_jadi_id')
                             ->label('Menghasilkan Barang')
                             ->required()
                             ->options(
@@ -65,37 +89,37 @@ class ResepResource extends Resource
                             )
                             ->searchable(),
 
-                        Forms\Components\TextInput::make('jumlah_barang_setengah_jadi')
+                        TextInput::make('jumlah_barang_setengah_jadi')
                             ->required()
                             ->numeric()
                             ->default(1)
                             ->minValue(1)
                             ->label('Jumlah Hasil'),
 
-                        Forms\Components\Textarea::make('deskripsi')
+                        Textarea::make('deskripsi')
                             ->maxLength(65535)
                             ->columnSpanFull()
                             ->label('Deskripsi Resep'),
 
-                        Forms\Components\Textarea::make('cara_pembuatan')
+                        Textarea::make('cara_pembuatan')
                             ->maxLength(65535)
                             ->columnSpanFull()
                             ->label('Cara Pembuatan'),
 
-                        Forms\Components\Toggle::make('status_aktif')
+                        Toggle::make('status_aktif')
                             ->required()
                             ->default(true)
                             ->label('Status Aktif'),
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('Bahan-bahan yang Dibutuhkan')
+                Section::make('Bahan-bahan yang Dibutuhkan')
                     ->description('Daftar semua bahan yang diperlukan untuk membuat resep ini')
                     ->schema([
-                        Forms\Components\Repeater::make('bahanResep')
+                        Repeater::make('bahanResep')
                             ->relationship()
                             ->schema([
-                                Forms\Components\Select::make('bahan_id')
+                                Select::make('bahan_id')
                                     ->label('Pilih Bahan')
                                     ->searchable()
                                     ->getSearchResultsUsing(
@@ -110,14 +134,14 @@ class ResepResource extends Resource
                                     )
                                     ->getOptionLabelUsing(fn($value) => MasterBarang::find($value)?->nama),
 
-                                Forms\Components\TextInput::make('jumlah')
+                                TextInput::make('jumlah')
                                     ->required()
                                     ->numeric()
                                     ->minValue(0.01)
                                     ->step(0.01)
                                     ->label('Jumlah Bahan'),
 
-                                Forms\Components\Textarea::make('catatan')
+                                Textarea::make('catatan')
                                     ->maxLength(500)
                                     ->label('Catatan (opsional)')
                                     ->columnSpanFull(),
@@ -136,31 +160,31 @@ class ResepResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nama')
+                TextColumn::make('nama')
                     ->searchable()
                     ->sortable()
                     ->label('Nama Resep')
                     ->description(fn(Resep $record) => 'Hasil: ' . ($record->barangSetengahJadi?->nama ?? '-')),
 
-                Tables\Columns\TextColumn::make('barangSetengahJadi.nama')
+                TextColumn::make('barangSetengahJadi.nama')
                     ->sortable()
                     ->label('Menghasilkan')
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('jumlah_hasil_dengan_satuan')
+                TextColumn::make('jumlah_hasil_dengan_satuan')
                     ->label('Jumlah Hasil')
                     ->state(fn(Resep $r) => $r->jumlah_hasil_dengan_satuan)
                     ->sortable('jumlah_barang_setengah_jadi')
                     ->description(fn(Resep $record) => 'Deskripsi: ' . ($record->deskripsi ?? '-')),
 
-                Tables\Columns\TextColumn::make('total_bahan')
+                TextColumn::make('total_bahan')
                     ->label('Jumlah Bahan')
                     ->badge()
                     ->color(fn($state) => $state > 5 ? 'success' : 'primary')
                     ->formatStateUsing(fn($state) => $state . ' bahan'),
 
                 // ⬇️ Ini pakai accessor dari model Resep (BUKAN Produksi)
-                Tables\Columns\TextColumn::make('bahan_list')
+                TextColumn::make('bahan_list')
                     ->label('Bahan yang Dibutuhkan')
                     ->state(fn(Resep $r) => $r->bahan_list)
                     ->html()
@@ -168,27 +192,27 @@ class ResepResource extends Resource
                     ->wrap()
                     ->lineClamp(6),
 
-                Tables\Columns\IconColumn::make('status_aktif')
+                IconColumn::make('status_aktif')
                     ->boolean()
                     ->label('Status')
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
-                Tables\Filters\TrashedFilter::make(),
-                Tables\Filters\SelectFilter::make('status_aktif')
+                TrashedFilter::make(),
+                SelectFilter::make('status_aktif')
                     ->options([
                         '1' => 'Aktif',
                         '0' => 'Nonaktif',
                     ])
                     ->label('Status Aktif'),
 
-                Tables\Filters\SelectFilter::make('barang_setengah_jadi_id')
+                SelectFilter::make('barang_setengah_jadi_id')
                     ->label('Menghasilkan Barang')
                     ->options(
                         MasterBarang::where('jenis', 'setengah_jadi')
@@ -204,29 +228,29 @@ class ResepResource extends Resource
                     ->icon('heroicon-o-arrow-down-tray')
 
                     // tampilkan tombol hanya untuk user yang boleh export
-                    ->visible(fn() => auth()->user()?->can('export', \App\Models\Resep::class) ?? false)
+                    ->visible(fn() => auth()->user()?->can('export', Resep::class) ?? false)
 
                     // guard tambahan saat eksekusi
-                    ->authorize(fn() => auth()->user()?->can('export', \App\Models\Resep::class) ?? false)
+                    ->authorize(fn() => auth()->user()?->can('export', Resep::class) ?? false)
 
                     ->action(function (array $data) {
                         $user = auth()->user();
-                        abort_unless($user && $user->can('export', \App\Models\Resep::class), 403);
+                        abort_unless($user && $user->can('export', Resep::class), 403);
 
-                        return \Maatwebsite\Excel\Facades\Excel::download(
-                            new \App\Exports\ResepExport($data['dari_tanggal'] ?? null, $data['sampai_tanggal'] ?? null),
+                        return Excel::download(
+                            new ResepExport($data['dari_tanggal'] ?? null, $data['sampai_tanggal'] ?? null),
                             'resep-export-' . date('Y-m-d') . '.xlsx'
                         );
                     })
-                    ->form([
-                        Forms\Components\DatePicker::make('dari_tanggal')->label('Dari Tanggal'),
-                        Forms\Components\DatePicker::make('sampai_tanggal')->label('Sampai Tanggal'),
+                    ->schema([
+                        DatePicker::make('dari_tanggal')->label('Dari Tanggal'),
+                        DatePicker::make('sampai_tanggal')->label('Sampai Tanggal'),
                     ]),
             ])
-            ->actions([
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\EditAction::make(),
-                    Tables\Actions\Action::make('lihat_bahan')
+            ->recordActions([
+                ActionGroup::make([
+                    EditAction::make(),
+                    Action::make('lihat_bahan')
                         ->label('Lihat Bahan')
                         ->icon('heroicon-o-eye')
                         ->modalHeading('Daftar Bahan Resep')
@@ -235,7 +259,7 @@ class ResepResource extends Resource
                         ->modalSubmitAction(false)
                         ->slideOver()
                         ->modalWidth('screen'),
-                    Tables\Actions\Action::make('lihat_histori_log')
+                    Action::make('lihat_histori_log')
                         ->label('Lihat Histori Log')
                         ->icon('heroicon-o-clock')
                         ->modalHeading('Histori Log Resep')
@@ -249,17 +273,17 @@ class ResepResource extends Resource
                         )
                         ->slideOver()
                         ->modalWidth('screen'),
-                    Tables\Actions\DeleteAction::make(),
-                    Tables\Actions\RestoreAction::make(),
-                    Tables\Actions\ForceDeleteAction::make(),
+                    DeleteAction::make(),
+                    RestoreAction::make(),
+                    ForceDeleteAction::make(),
                 ])
             ])
-            ->actionsPosition(ActionsPosition::BeforeColumns)
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                    Tables\Actions\RestoreBulkAction::make(),
-                    Tables\Actions\ForceDeleteBulkAction::make(),
+            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }
@@ -267,16 +291,16 @@ class ResepResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\BahanResepRelationManager::class,
+            BahanResepRelationManager::class,
         ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListReseps::route('/'),
-            'create' => Pages\CreateResep::route('/create'),
-            'edit'   => Pages\EditResep::route('/{record}'),
+            'index'  => ListReseps::route('/'),
+            'create' => CreateResep::route('/create'),
+            'edit'   => EditResep::route('/{record}'),
         ];
     }
 

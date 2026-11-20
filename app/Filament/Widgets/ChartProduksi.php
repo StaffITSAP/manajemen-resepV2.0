@@ -10,7 +10,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Trend\Trend as TrendTrend;
 
 class ChartProduksi extends ChartWidget
 {
-    protected static ?string $heading = 'Produksi Per Bulan';
+    protected ?string $heading = 'Produksi Per Bulan';
 
     protected function getData(): array
     {

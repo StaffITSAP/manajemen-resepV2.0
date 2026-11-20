@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Tables\Columns\TextColumn;
+use App\Filament\Resources\AccurateBranchResource\Pages\ListAccurateBranches;
 use App\Filament\Resources\AccurateBranchResource\Pages;
 use App\Models\AccurateBranch;
 use Filament\Resources\Resource;
@@ -12,21 +14,21 @@ class AccurateBranchResource extends Resource
 {
     protected static ?string $model = AccurateBranch::class;
 
-    protected static ?string $navigationIcon  = 'heroicon-o-building-office';
+    protected static string | \BackedEnum | null $navigationIcon  = 'heroicon-o-building-office';
     protected static ?string $navigationLabel = 'Cabang Accurate';
-    protected static ?string $navigationGroup = 'Accurate Online';
+    protected static string | \UnitEnum | null $navigationGroup = 'Accurate Online';
     protected static ?string $modelLabel      = 'Cabang Accurate';
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('accurate_id')
+                TextColumn::make('accurate_id')
                     ->label('ID Accurate')
                     ->sortable()
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('name')
+                TextColumn::make('name')
                     ->label('Nama Cabang')
                     ->sortable()
                     ->searchable(),
@@ -47,21 +49,21 @@ class AccurateBranchResource extends Resource
                 //     ->badge()
                 //     ->sortable(),
 
-                Tables\Columns\TextColumn::make('updated_at')
+                TextColumn::make('updated_at')
                     ->label('Terakhir Update')
                     ->dateTime('d M Y H:i')
                     ->sortable(),
             ])
             ->defaultSort('name', 'asc')
             ->filters([])
-            ->actions([])
-            ->bulkActions([]);
+            ->recordActions([])
+            ->toolbarActions([]);
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListAccurateBranches::route('/'),
+            'index' => ListAccurateBranches::route('/'),
         ];
     }
 }

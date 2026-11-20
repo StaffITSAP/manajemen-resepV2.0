@@ -2,10 +2,14 @@
 
 namespace App\Filament\Resources\ItemAdjustmentUploadResource\Pages;
 
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
+use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\RestoreAction;
 use App\Filament\Resources\ItemAdjustmentUploadResource;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Infolists\Infolist;
-use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Actions;
 use Illuminate\Support\Facades\Storage;
@@ -15,9 +19,9 @@ class ViewItemAdjustmentUpload extends ViewRecord
 {
     protected static string $resource = ItemAdjustmentUploadResource::class;
 
-    public function infolist(Infolist $infolist): Infolist
+    public function infolist(Schema $schema): Schema
     {
-        return $infolist->schema([
+        return $schema->components([
             Section::make('Ringkasan')->schema([
                 TextEntry::make('user.name')->label('Diunggah oleh'),
                 TextEntry::make('status')->badge()
@@ -52,16 +56,16 @@ class ViewItemAdjustmentUpload extends ViewRecord
     {
         return [
             // ✅ tombol download di halaman view
-            Actions\Action::make('download')
+            Action::make('download')
                 ->label('Download File Excel')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->visible(fn(ItemAdjustmentUpload $record) => filled($record->path))
                 ->url(fn(ItemAdjustmentUpload $record) => Storage::disk('public')->url($record->path))
                 ->openUrlInNewTab(),
 
-            Actions\DeleteAction::make(),
-            Actions\ForceDeleteAction::make(),
-            Actions\RestoreAction::make(),
+            DeleteAction::make(),
+            ForceDeleteAction::make(),
+            RestoreAction::make(),
         ];
     }
 }

@@ -2,11 +2,21 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use App\Filament\Resources\UserResource\Pages\ListUsers;
+use App\Filament\Resources\UserResource\Pages\CreateUser;
+use App\Filament\Resources\UserResource\Pages\EditUser;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\Role;
 use App\Models\User;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -17,23 +27,23 @@ class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static ?string $navigationIcon  = 'heroicon-o-user-circle';
+    protected static string | \BackedEnum | null $navigationIcon  = 'heroicon-o-user-circle';
     protected static ?string $navigationLabel = 'Users';
-    protected static ?string $navigationGroup = 'Settings';
+    protected static string | \UnitEnum | null $navigationGroup = 'Settings';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Informasi User')
+        return $schema
+            ->components([
+                Section::make('Informasi User')
                     ->schema([
-                        Forms\Components\TextInput::make('name')
+                        TextInput::make('name')
                             ->label('Nama')
                             ->required()
                             ->maxLength(100)
                             ->live(onBlur: true),
 
-                        Forms\Components\TextInput::make('email')
+                        TextInput::make('email')
                             ->label('Email')
                             ->email()
                             ->required()
@@ -41,7 +51,7 @@ class UserResource extends Resource
                             ->unique(ignoreRecord: true),
 
                         // Username
-                        Forms\Components\TextInput::make('username')
+                        TextInput::make('username')
                             ->label('Username')
                             ->required()
                             ->alphaDash()
@@ -51,20 +61,20 @@ class UserResource extends Resource
                             ->unique(ignoreRecord: true),
 
                         // ===== FIELD ROLE (JANGAN di-dehydrated(false) !!!) =====
-                        Forms\Components\Select::make('role_id')
+                        Select::make('role_id')
                             ->label('Role')
                             ->options(fn() => Role::orderBy('id')->pluck('name', 'id'))
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->afterStateHydrated(function (Forms\Set $set, ?User $record) {
+                            ->afterStateHydrated(function (Set $set, ?User $record) {
                                 // Saat edit, isi select dari relasi pivot
                                 if ($record) {
                                     $set('role_id', $record->roles()->value('roles.id'));
                                 }
                             }),
 
-                        Forms\Components\TextInput::make('password')
+                        TextInput::make('password')
                             ->label('Password')
                             ->password()
                             ->revealable()
@@ -74,7 +84,7 @@ class UserResource extends Resource
                             ->dehydrateStateUsing(fn(?string $state) => filled($state) ? bcrypt($state) : null)
                             ->same('password_confirmation'),
 
-                        Forms\Components\TextInput::make('password_confirmation')
+                        TextInput::make('password_confirmation')
                             ->label('Konfirmasi Password')
                             ->password()
                             ->revealable()
@@ -89,10 +99,10 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')->label('Nama')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('username')->label('Username')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('email')->label('Email')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('role')
+                TextColumn::make('name')->label('Nama')->searchable()->sortable(),
+                TextColumn::make('username')->label('Username')->searchable()->sortable(),
+                TextColumn::make('email')->label('Email')->searchable()->sortable(),
+                TextColumn::make('role')
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
                         'superadmin' => 'danger',
@@ -103,15 +113,15 @@ class UserResource extends Resource
                         default => 'gray',
                     })
                     ->label('Role Utama'),
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->label('Dibuat')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make()->requiresConfirmation(),
+            ->recordActions([
+                EditAction::make(),
+                DeleteAction::make()->requiresConfirmation(),
             ])
             ->defaultSort('created_at', 'desc');
     }
@@ -119,9 +129,9 @@ class UserResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListUsers::route('/'),
-            'create' => Pages\CreateUser::route('/create'),
-            'edit'   => Pages\EditUser::route('/{record}/edit'),
+            'index'  => ListUsers::route('/'),
+            'create' => CreateUser::route('/create'),
+            'edit'   => EditUser::route('/{record}/edit'),
         ];
     }
 

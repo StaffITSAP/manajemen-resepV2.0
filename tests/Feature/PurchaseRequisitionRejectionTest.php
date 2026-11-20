@@ -8,6 +8,8 @@ use App\Filament\Resources\PurchaseRequisitionResource\Pages\ViewPurchaseRequisi
 use App\Models\AccurateBranch;
 use App\Models\Permission;
 use App\Models\PurchaseRequisition;
+use Filament\Actions\Action;
+use Filament\Actions\Testing\TestAction;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Accurate\AccurateClient;
@@ -250,12 +252,20 @@ class PurchaseRequisitionRejectionTest extends TestCase
 
         Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
             ->mountAction('reject')
-            ->setActionData(['rejection_reason' => '   '])
+            ->fillForm(['rejection_reason' => '   '])
             ->callMountedAction()
             ->assertHasActionErrors(['rejection_reason'])
-            ->setActionData(['rejection_reason' => 'Barang tidak sesuai kebutuhan'])
+            ->fillForm(['rejection_reason' => 'Barang tidak sesuai kebutuhan'])
             ->callMountedAction()
-            ->assertHasNoActionErrors()
+            ->assertHasNoActionErrors();
+
+        $record->refresh();
+        $this->assertSame('cancelled', $record->status);
+        $this->assertSame('Barang tidak sesuai kebutuhan', $record->rejection_reason);
+        $this->assertSame($user->id, $record->rejected_by);
+        $this->assertNotNull($record->rejected_at);
+
+        Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
             ->assertSee('Penolakan')
             ->assertSee('Ditolak')
             ->assertSee('Barang tidak sesuai kebutuhan');
@@ -285,11 +295,19 @@ class PurchaseRequisitionRejectionTest extends TestCase
         $this->actingAs($user);
 
         Livewire::test(ListPurchaseRequisitionLogs::class)
+            ->assertTableActionExists('detail', fn (Action $action): bool => $action->getModalContent() instanceof \Illuminate\Contracts\Support\Htmlable, $record);
+
+        Livewire::test(ListPurchaseRequisitionLogs::class)
             ->mountTableAction('detail', $record)
-            ->assertSee('Penolakan')
-            ->assertSee('Ditolak Oleh')
-            ->assertSee($rejecter->name)
-            ->assertSee('Alasan Penolakan');
+            ->assertActionMounted(TestAction::make('detail')->table($record));
+
+        $detail = view('filament.components.purchase-requisition-log-detail', [
+            'record' => $record->fresh()->load(['rejecter', 'user', 'items']),
+        ])->render();
+
+        foreach (['Penolakan', 'Ditolak Oleh', $rejecter->name, 'Alasan Penolakan'] as $text) {
+            $this->assertStringContainsString($text, $detail);
+        }
     }
 
     private function userWithPermission(string ...$permissionNames): User

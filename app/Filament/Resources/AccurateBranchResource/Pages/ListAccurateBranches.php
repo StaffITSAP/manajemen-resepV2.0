@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AccurateBranchResource\Pages;
 
+use Filament\Actions\Action;
 use App\Filament\Resources\AccurateBranchResource;
 use App\Services\Accurate\BranchSyncService;
 use Filament\Actions;
@@ -17,7 +18,7 @@ class ListAccurateBranches extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('sync')
+            Action::make('sync')
                 ->label('Sinkron dari Accurate')
                 ->icon('heroicon-o-arrow-path')
                 ->color('primary')

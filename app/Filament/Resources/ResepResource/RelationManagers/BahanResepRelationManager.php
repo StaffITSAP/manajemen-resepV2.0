@@ -2,9 +2,18 @@
 
 namespace App\Filament\Resources\ResepResource\RelationManagers;
 
+use Filament\Schemas\Schema;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use App\Models\MasterBarang;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -19,21 +28,21 @@ class BahanResepRelationManager extends RelationManager
 
     protected static ?string $modelLabel = 'Bahan';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\Select::make('bahan_id')
+        return $schema
+            ->components([
+                Select::make('bahan_id')
                     ->label('Bahan')
                     ->required()
                     ->options(MasterBarang::where('jenis', 'bahan')->where('status_aktif', true)->pluck('nama', 'id'))
                     ->searchable()
                     ->reactive(),
-                Forms\Components\TextInput::make('jumlah')
+                TextInput::make('jumlah')
                     ->required()
                     ->numeric()
                     ->label('Jumlah'),
-                Forms\Components\Textarea::make('catatan')
+                Textarea::make('catatan')
                     ->maxLength(65535)
                     ->columnSpanFull()
                     ->label('Catatan'),
@@ -45,16 +54,16 @@ class BahanResepRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('bahan.nama')
             ->columns([
-                Tables\Columns\TextColumn::make('bahan.nama')
+                TextColumn::make('bahan.nama')
                     ->searchable()
                     ->label('Nama Bahan'),
-                Tables\Columns\TextColumn::make('bahan.satuan.nama')
+                TextColumn::make('bahan.satuan.nama')
                     ->label('Satuan'),
-                Tables\Columns\TextColumn::make('jumlah')
+                TextColumn::make('jumlah')
                     ->numeric()
                     ->sortable()
                     ->label('Jumlah'),
-                Tables\Columns\TextColumn::make('catatan')
+                TextColumn::make('catatan')
                     ->limit(50)
                     ->label('Catatan'),
             ])
@@ -62,15 +71,15 @@ class BahanResepRelationManager extends RelationManager
                 //
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make(),
+                CreateAction::make(),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+            ->recordActions([
+                EditAction::make(),
+                DeleteAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

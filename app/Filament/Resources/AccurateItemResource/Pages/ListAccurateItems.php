@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AccurateItemResource\Pages;
 
+use Filament\Actions\Action;
 use App\Filament\Resources\AccurateItemResource;
 use App\Services\Accurate\AccurateItemSyncRunner;
 use Filament\Actions;
@@ -17,7 +18,7 @@ class ListAccurateItems extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('sync')
+            Action::make('sync')
                 ->label('Sinkron dari Accurate')
                 ->icon('heroicon-o-arrow-path')
                 ->color('primary')

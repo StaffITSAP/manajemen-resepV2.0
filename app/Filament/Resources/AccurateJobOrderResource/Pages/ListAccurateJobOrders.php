@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\AccurateJobOrderResource\Pages;
 
+use Filament\Actions\Action;
+use App\Services\Accurate\BranchSyncService;
 use App\Filament\Resources\AccurateJobOrderResource;
 use App\Jobs\Accurate\FullSyncJobOrders;
 use App\Services\Accurate\JobOrderSyncService;
@@ -18,7 +20,7 @@ class ListAccurateJobOrders extends ListRecords
     {
         return [
             // 🔄 Sinkron terbaru (langsung)
-            Actions\Action::make('sync-latest')
+            Action::make('sync-latest')
                 ->label('Sinkron Terbaru')
                 ->icon('heroicon-o-arrow-path')
                 ->color('primary')
@@ -35,7 +37,7 @@ class ListAccurateJobOrders extends ListRecords
                 }),
 
             // ☁️ Sinkron via Worker
-            Actions\Action::make('sync-worker')
+            Action::make('sync-worker')
                 ->label('Sinkron (Manual)')
                 ->icon('heroicon-o-cloud-arrow-down')
                 ->color('success')
@@ -51,15 +53,15 @@ class ListAccurateJobOrders extends ListRecords
                         ->success()
                         ->send();
                 }),
-            Actions\Action::make('sync-branches')
+            Action::make('sync-branches')
                 ->label('Sinkron Cabang')
                 ->icon('heroicon-o-building-office')
                 ->color('gray')
                 ->visible(fn() => Auth::user()?->hasRole('superadmin'))
                 ->requiresConfirmation()
-                ->action(function (\App\Services\Accurate\BranchSyncService $svc) {
+                ->action(function (BranchSyncService $svc) {
                     $res = $svc->sync();
-                    \Filament\Notifications\Notification::make()
+                    Notification::make()
                         ->title('Sinkron Cabang')
                         ->body("Berhasil sinkron {$res['total']} cabang Accurate.")
                         ->success()

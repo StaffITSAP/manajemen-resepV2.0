@@ -2,8 +2,20 @@
 
 namespace App\Filament\Resources\MasterSatuanResource\RelationManagers;
 
+use Filament\Schemas\Schema;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -18,30 +30,30 @@ class BarangRelationManager extends RelationManager
 
     protected static ?string $modelLabel = 'Barang';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\TextInput::make('nama')
+        return $schema
+            ->components([
+                TextInput::make('nama')
                     ->required()
                     ->maxLength(255),
-                Forms\Components\Select::make('jenis')
+                Select::make('jenis')
                     ->required()
                     ->options([
                         'bahan' => 'Bahan',
                         'setengah_jadi' => 'Barang 1/2 Jadi',
                         'jadi' => 'Barang Jadi',
                     ]),
-                Forms\Components\TextInput::make('stok')
+                TextInput::make('stok')
                     ->numeric()
                     ->default(0),
-                Forms\Components\TextInput::make('stok_minimal')
+                TextInput::make('stok_minimal')
                     ->numeric()
                     ->default(0),
-                Forms\Components\Textarea::make('deskripsi')
+                Textarea::make('deskripsi')
                     ->maxLength(65535)
                     ->columnSpanFull(),
-                Forms\Components\Toggle::make('status_aktif')
+                Toggle::make('status_aktif')
                     ->required()
                     ->default(true),
             ]);
@@ -52,9 +64,9 @@ class BarangRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('nama')
             ->columns([
-                Tables\Columns\TextColumn::make('nama')
+                TextColumn::make('nama')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('jenis')
+                TextColumn::make('jenis')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'bahan' => 'info',
@@ -66,38 +78,38 @@ class BarangRelationManager extends RelationManager
                         'setengah_jadi' => '1/2 Jadi',
                         'jadi' => 'Jadi',
                     }),
-                Tables\Columns\TextColumn::make('stok')
+                TextColumn::make('stok')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('stok_minimal')
+                TextColumn::make('stok_minimal')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\IconColumn::make('status_aktif')
+                IconColumn::make('status_aktif')
                     ->boolean(),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('jenis')
+                SelectFilter::make('jenis')
                     ->options([
                         'bahan' => 'Bahan',
                         'setengah_jadi' => 'Barang 1/2 Jadi',
                         'jadi' => 'Barang Jadi',
                     ]),
-                Tables\Filters\SelectFilter::make('status_aktif')
+                SelectFilter::make('status_aktif')
                     ->options([
                         '1' => 'Aktif',
                         '0' => 'Nonaktif',
                     ])
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make(),
+                CreateAction::make(),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+            ->recordActions([
+                EditAction::make(),
+                DeleteAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AccurateJobOrderResource\RelationManagers;
 
+use Filament\Tables\Columns\TextColumn;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -15,12 +16,12 @@ class ItemsRelationManager extends RelationManager
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('item_no')->label('Kode #')->searchable(),
-                Tables\Columns\TextColumn::make('item_name')->label('Nama'),
-                Tables\Columns\TextColumn::make('unit_name')->label('Satuan')->toggleable(),
-                Tables\Columns\TextColumn::make('warehouse_name')->label('Gudang')->toggleable(),
-                Tables\Columns\TextColumn::make('quantity')->label('Qty')->numeric(2)->alignRight(),
-                Tables\Columns\TextColumn::make('porsi')
+                TextColumn::make('item_no')->label('Kode #')->searchable(),
+                TextColumn::make('item_name')->label('Nama'),
+                TextColumn::make('unit_name')->label('Satuan')->toggleable(),
+                TextColumn::make('warehouse_name')->label('Gudang')->toggleable(),
+                TextColumn::make('quantity')->label('Qty')->numeric(2)->alignRight(),
+                TextColumn::make('porsi')
                     ->label('Porsi')
                     ->suffix('%')
                     ->numeric(2)
@@ -37,7 +38,7 @@ class ItemsRelationManager extends RelationManager
                         $isProduced = (bool) data_get($record->raw, 'item.materialProduced', false);
                         return $isProduced ? 'success' : 'gray';
                     }),
-                Tables\Columns\TextColumn::make('amount')->label('Biaya')->numeric(2)->alignRight(),
+                TextColumn::make('amount')->label('Biaya')->numeric(2)->alignRight(),
             ])
             ->paginated([10, 25, 50])
             ->emptyStateHeading('Belum ada detail item')

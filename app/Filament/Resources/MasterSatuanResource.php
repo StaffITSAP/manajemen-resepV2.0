@@ -2,11 +2,31 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Actions\ViewAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\RestoreBulkAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use App\Filament\Resources\MasterSatuanResource\RelationManagers\BarangRelationManager;
+use App\Filament\Resources\MasterSatuanResource\Pages\ListMasterSatuans;
+use App\Filament\Resources\MasterSatuanResource\Pages\CreateMasterSatuan;
+use App\Filament\Resources\MasterSatuanResource\Pages\EditMasterSatuan;
 use App\Filament\Resources\MasterSatuanResource\Pages;
 use App\Filament\Resources\MasterSatuanResource\RelationManagers;
 use App\Models\MasterSatuan;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -17,29 +37,29 @@ class MasterSatuanResource extends Resource
 {
     protected static ?string $model = MasterSatuan::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-scale';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-scale';
 
     protected static ?string $navigationLabel = 'Satuan';
 
-    protected static ?string $navigationGroup = 'Master Data';
+    protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
 
     protected static ?string $modelLabel = 'Satuan';
     protected static ?string $pluralModelLabel = 'Satuan';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\TextInput::make('nama')
+        return $schema
+            ->components([
+                TextInput::make('nama')
                     ->required()
                     ->maxLength(255),
-                Forms\Components\TextInput::make('kode')
+                TextInput::make('kode')
                     ->maxLength(50)
                     ->unique(ignoreRecord: true),
-                Forms\Components\Textarea::make('deskripsi')
+                Textarea::make('deskripsi')
                     ->maxLength(65535)
                     ->columnSpanFull(),
-                Forms\Components\Toggle::make('status_aktif')
+                Toggle::make('status_aktif')
                     ->required()
                     ->default(true),
             ]);
@@ -49,42 +69,42 @@ class MasterSatuanResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nama')
+                TextColumn::make('nama')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('kode')
+                TextColumn::make('kode')
                     ->searchable(),
-                Tables\Columns\IconColumn::make('status_aktif')
+                IconColumn::make('status_aktif')
                     ->boolean(),
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
+                TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
-                Tables\Filters\TrashedFilter::make(),
-                Tables\Filters\SelectFilter::make('status_aktif')
+                TrashedFilter::make(),
+                SelectFilter::make('status_aktif')
                     ->options([
                         '1' => 'Aktif',
                         '0' => 'Nonaktif',
                     ])
             ])
-            ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-                Tables\Actions\RestoreAction::make(),
-                Tables\Actions\ForceDeleteAction::make(),
+            ->recordActions([
+                ViewAction::make(),
+                EditAction::make(),
+                DeleteAction::make(),
+                RestoreAction::make(),
+                ForceDeleteAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                    Tables\Actions\RestoreBulkAction::make(),
-                    Tables\Actions\ForceDeleteBulkAction::make(),
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }
@@ -92,17 +112,17 @@ class MasterSatuanResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\BarangRelationManager::class,
+            BarangRelationManager::class,
         ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListMasterSatuans::route('/'),
-            'create' => Pages\CreateMasterSatuan::route('/create'),
+            'index' => ListMasterSatuans::route('/'),
+            'create' => CreateMasterSatuan::route('/create'),
             // 'view' => Pages\ViewMasterSatuan::route('/{record}'),
-            'edit' => Pages\EditMasterSatuan::route('/{record}'),
+            'edit' => EditMasterSatuan::route('/{record}'),
         ];
     }
 

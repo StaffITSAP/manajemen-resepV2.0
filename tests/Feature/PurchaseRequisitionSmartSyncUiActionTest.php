@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\PurchaseRequisitionResource\Pages\ListPurchaseRequisitions;
+use App\Filament\Resources\PurchaseRequisitionResource;
 use App\Models\AccurateBranch;
 use App\Models\Permission;
 use App\Models\PurchaseRequisition;
@@ -12,6 +13,7 @@ use App\Services\Accurate\AccurateClient;
 use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
 use Filament\Facades\Filament;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -170,6 +172,20 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
             ->assertActionHasLabel('create', 'Buat Permintaan Barang');
     }
 
+    public function test_normal_user_cannot_mount_smart_sync_action_directly(): void
+    {
+        $this->actingAs($this->createUser('staff'));
+
+        $smartSync = Mockery::mock(PurchaseRequisitionSmartSync::class);
+        $smartSync->shouldReceive('isRunning')->andReturnFalse();
+        $smartSync->shouldNotReceive('start');
+        $this->app->instance(PurchaseRequisitionSmartSync::class, $smartSync);
+
+        Livewire::test(ListPurchaseRequisitions::class)
+            ->call('mountAction', 'smartSync')
+            ->call('callMountedAction');
+    }
+
     public function test_confirmation_decline_does_not_call_coordinator(): void
     {
         $this->actingAs($this->createUser('superadmin'));
@@ -180,12 +196,15 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
         $this->app->instance(PurchaseRequisitionSmartSync::class, $smartSync);
 
         Livewire::test(ListPurchaseRequisitions::class)
+            ->assertActionExists('smartSync', fn (Action $action): bool =>
+                $action->getModalHeading() === 'Sinkron Data Permintaan Barang'
+                && str_contains((string) $action->getModalDescription(), 'Sistem akan memperbarui satuan barang dan harga pembelian terakhir dari Accurate secara bertahap.')
+                && str_contains((string) $action->getModalDescription(), 'Proses akan berjalan di background.')
+                && $action->getModalSubmitActionLabel() === 'Mulai Sinkronisasi'
+                && $action->getModalCancelActionLabel() === 'Batal'
+            )
             ->mountAction('smartSync')
-            ->assertSee('Sinkron Data Permintaan Barang')
-            ->assertSee('Sistem akan memperbarui satuan barang dan harga pembelian terakhir dari Accurate secara bertahap.')
-            ->assertSee('Proses akan berjalan di background.')
-            ->assertSee('Mulai Sinkronisasi')
-            ->assertSee('Batal')
+            ->assertActionMounted('smartSync')
             ->unmountAction();
     }
 
@@ -398,7 +417,7 @@ class PurchaseRequisitionSmartSyncUiActionTest extends TestCase
         $this->assertStringContainsString("TextColumn::make('estimated_total')", $contents);
         $this->assertStringContainsString("->label('Nilai Estimasi')", $contents);
         $this->assertStringContainsString("TextColumn::make('status_summary')", $contents);
-        $this->assertStringContainsString('Tables\Actions\ViewAction::make()', $contents);
-        $this->assertStringContainsString("'create' => Pages\CreatePurchaseRequisition::route('/create')", $contents);
+        $this->assertStringContainsString('ViewAction::make()', $contents);
+        $this->assertArrayHasKey('create', PurchaseRequisitionResource::getPages());
     }
 }

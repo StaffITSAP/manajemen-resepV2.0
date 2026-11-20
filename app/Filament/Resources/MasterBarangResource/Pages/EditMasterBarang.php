@@ -2,6 +2,9 @@
 
 namespace App\Filament\Resources\MasterBarangResource\Pages;
 
+use Filament\Actions\DeleteAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\RestoreAction;
 use App\Filament\Resources\MasterBarangResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
@@ -13,9 +16,9 @@ class EditMasterBarang extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
-            Actions\ForceDeleteAction::make(),
-            Actions\RestoreAction::make(),
+            DeleteAction::make(),
+            ForceDeleteAction::make(),
+            RestoreAction::make(),
         ];
     }
     protected function getRedirectUrl(): string

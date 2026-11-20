@@ -2,10 +2,20 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\Filter;
+use Filament\Forms\Components\DatePicker;
+use Filament\Actions\ViewAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use App\Filament\Resources\LogPerubahanResource\Pages\ListLogPerubahans;
 use App\Filament\Resources\LogPerubahanResource\Pages;
 use App\Models\LogPerubahan;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -16,8 +26,8 @@ class LogPerubahanResource extends Resource
 {
     protected static ?string $model = LogPerubahan::class;
 
-    protected static ?string $navigationIcon  = 'heroicon-o-document-text';
-    protected static ?string $navigationGroup = 'Laporan';
+    protected static string | \BackedEnum | null $navigationIcon  = 'heroicon-o-document-text';
+    protected static string | \UnitEnum | null $navigationGroup = 'Laporan';
     protected static ?string $modelLabel      = 'Log Perubahan';
     protected static ?int    $navigationSort  = 3;
 
@@ -28,15 +38,15 @@ class LogPerubahanResource extends Resource
     }
 
     // Tidak dipakai (read-only), tapi biarkan ada.
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\TextInput::make('model_type')->disabled(),
-            Forms\Components\TextInput::make('model_id')->disabled(),
-            Forms\Components\TextInput::make('aksi')->disabled(),
-            Forms\Components\Textarea::make('keterangan')->disabled()->columnSpanFull(),
-            Forms\Components\Textarea::make('data_lama')->disabled()->columnSpanFull(),
-            Forms\Components\Textarea::make('data_baru')->disabled()->columnSpanFull(),
+        return $schema->components([
+            TextInput::make('model_type')->disabled(),
+            TextInput::make('model_id')->disabled(),
+            TextInput::make('aksi')->disabled(),
+            Textarea::make('keterangan')->disabled()->columnSpanFull(),
+            Textarea::make('data_lama')->disabled()->columnSpanFull(),
+            Textarea::make('data_baru')->disabled()->columnSpanFull(),
         ]);
     }
 
@@ -44,18 +54,18 @@ class LogPerubahanResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('model_type')
+                TextColumn::make('model_type')
                     ->label('Model')
                     ->formatStateUsing(fn($state) => class_basename($state))
                     ->searchable(),
-                Tables\Columns\TextColumn::make('model_id')
+                TextColumn::make('model_id')
                     ->label('ID Model')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('user.name')
+                TextColumn::make('user.name')
                     ->label('User')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('aksi')
+                TextColumn::make('aksi')
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
                         'create' => 'success',
@@ -64,35 +74,35 @@ class LogPerubahanResource extends Resource
                         default  => 'gray',
                     })
                     ->searchable(),
-                Tables\Columns\TextColumn::make('keterangan')
+                TextColumn::make('keterangan')
                     ->limit(80)
                     ->tooltip(fn($state) => $state),
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
+                TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
-                Tables\Filters\SelectFilter::make('model_type')
+                SelectFilter::make('model_type')
                     ->options([
                         'App\Models\Resep'    => 'Resep',
                         'App\Models\Produksi' => 'Produksi',
                     ]),
-                Tables\Filters\SelectFilter::make('aksi')
+                SelectFilter::make('aksi')
                     ->options([
                         'create' => 'Create',
                         'update' => 'Update',
                         'delete' => 'Delete',
                     ]),
-                Tables\Filters\Filter::make('created_at')
+                Filter::make('created_at')
                     ->form([
-                        Forms\Components\DatePicker::make('dari_tanggal'),
-                        Forms\Components\DatePicker::make('sampai_tanggal'),
+                        DatePicker::make('dari_tanggal'),
+                        DatePicker::make('sampai_tanggal'),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
@@ -106,14 +116,14 @@ class LogPerubahanResource extends Resource
                             );
                     }),
             ])
-            ->actions([
+            ->recordActions([
                 // hanya View
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ])
-            ->bulkActions([
+            ->toolbarActions([
                 // Hanya tampil jika user boleh hapus log
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
+                BulkActionGroup::make([
+                    DeleteBulkAction::make()
                         ->visible(fn() => Gate::allows('delete', LogPerubahan::query()->first() ?? new LogPerubahan())),
                 ]),
             ]);
@@ -122,7 +132,7 @@ class LogPerubahanResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListLogPerubahans::route('/'),
+            'index' => ListLogPerubahans::route('/'),
         ];
     }
 

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\PurchaseRequisitionResource\Pages;
 
+use Filament\Actions\Action;
+use Filament\Actions\CreateAction;
 use App\Filament\Resources\PurchaseRequisitionResource;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
 use Filament\Actions;
@@ -20,13 +22,14 @@ class ListPurchaseRequisitions extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('smartSync')
+            Action::make('smartSync')
                 ->label(fn(PurchaseRequisitionSmartSync $smartSync): string => $smartSync->isRunning()
                     ? 'Sinkronisasi sedang berjalan...'
                     : 'Sinkron Data Permintaan Barang')
                 ->icon('heroicon-o-arrow-path')
                 ->color(fn(PurchaseRequisitionSmartSync $smartSync): string => $smartSync->isRunning() ? 'gray' : 'primary')
                 ->visible(fn(): bool => auth()->user()?->hasRole('superadmin') === true)
+                ->authorize(fn(): bool => auth()->user()?->hasRole('superadmin') === true)
                 ->disabled(fn(PurchaseRequisitionSmartSync $smartSync): bool => $smartSync->isRunning())
                 ->extraAttributes(fn(PurchaseRequisitionSmartSync $smartSync): array => $smartSync->isRunning()
                     ? ['class' => 'opacity-60 cursor-not-allowed [&_svg]:animate-spin']
@@ -55,7 +58,7 @@ class ListPurchaseRequisitions extends ListRecords
                         ->success()
                         ->send();
                 }),
-            Actions\CreateAction::make()
+            CreateAction::make()
                 ->label('Buat Permintaan Barang'),
         ];
     }

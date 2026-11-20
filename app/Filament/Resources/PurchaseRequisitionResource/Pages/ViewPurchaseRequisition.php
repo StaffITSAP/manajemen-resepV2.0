@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\PurchaseRequisitionResource\Pages;
 
+use Filament\Forms\Components\Textarea;
+use RuntimeException;
 use App\Filament\Resources\PurchaseRequisitionResource;
 use App\Models\PurchaseRequisition;
 use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
@@ -86,8 +88,8 @@ class ViewPurchaseRequisition extends ViewRecord
                 ->modalDescription('Anda akan menolak permintaan barang ini. Silakan isi alasan penolakan untuk melanjutkan.')
                 ->modalSubmitActionLabel('Tolak')
                 ->modalCancelActionLabel('Batal')
-                ->form([
-                    \Filament\Forms\Components\Textarea::make('rejection_reason')
+                ->schema([
+                    Textarea::make('rejection_reason')
                         ->label('Alasan Penolakan')
                         ->placeholder('Masukkan alasan penolakan...')
                         ->required()
@@ -100,7 +102,7 @@ class ViewPurchaseRequisition extends ViewRecord
                 ->action(function (PurchaseRequisition $record, array $data): void {
                     try {
                         $this->record = PurchaseRequisitionResource::rejectRecord($record, (string) ($data['rejection_reason'] ?? ''));
-                    } catch (\RuntimeException) {
+                    } catch (RuntimeException) {
                         Notification::make()
                             ->danger()
                             ->title('Permintaan Barang tidak dapat ditolak.')

@@ -2,15 +2,33 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Grid;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\TextInput;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\TextInputColumn;
+use Filament\Actions\ActionGroup;
+use Filament\Actions\ViewAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\RestoreAction;
+use Filament\Tables\Enums\RecordActionsPosition;
+use App\Filament\Resources\ItemAdjustmentUploadResource\Pages\ListItemAdjustmentUploads;
+use App\Filament\Resources\ItemAdjustmentUploadResource\Pages\CreateItemAdjustmentUpload;
+use App\Filament\Resources\ItemAdjustmentUploadResource\Pages\ViewItemAdjustmentUpload;
+use App\Filament\Resources\ItemAdjustmentUploadResource\Pages\EditItemAdjustmentUpload;
 use App\Filament\Resources\ItemAdjustmentUploadResource\Pages;
 use App\Models\ItemAdjustmentUpload;
 use App\Services\Accurate\ItemAdjustmentImporter;
 use Carbon\Carbon;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Enums\ActionsPosition;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,8 +41,8 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 class ItemAdjustmentUploadResource extends Resource
 {
     protected static ?string $model = ItemAdjustmentUpload::class;
-    protected static ?string $navigationIcon = 'heroicon-o-arrow-up-tray';
-    protected static ?string $navigationGroup = 'Accurate Online';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-arrow-up-tray';
+    protected static string | \UnitEnum | null $navigationGroup = 'Accurate Online';
     protected static ?string $navigationLabel = 'Upload Item Adjustment';
     protected static ?string $modelLabel = 'Upload Item Adjustment';
 
@@ -40,14 +58,14 @@ class ItemAdjustmentUploadResource extends Resource
             && blank($record->accurate_id);
     }
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\Section::make('Import Data')
+        return $schema->components([
+            Section::make('Import Data')
                 ->schema([
-                    Forms\Components\Grid::make(2)
+                    Grid::make(2)
                         ->schema([
-                            Forms\Components\FileUpload::make('path')
+                            FileUpload::make('path')
                                 ->label('File Excel')
                                 ->disk('public')
                                 ->directory('imports/item_adjustment')
@@ -83,7 +101,7 @@ class ItemAdjustmentUploadResource extends Resource
                                     return ! static::canEditRecord($record);
                                 }),
 
-                            Forms\Components\DatePicker::make('trans_date')
+                            DatePicker::make('trans_date')
                                 ->label('Tanggal Transaksi (transDate)')
                                 ->native(false)
                                 ->displayFormat('d/m/Y')
@@ -91,13 +109,13 @@ class ItemAdjustmentUploadResource extends Resource
                                 ->dehydrated(true)
                                 ->closeOnDateSelection(),
 
-                            Forms\Components\TextInput::make('description')
+                            TextInput::make('description')
                                 ->label('Deskripsi (description)')
                                 ->maxLength(255)
                                 ->disabled()
                                 ->dehydrated(true),
 
-                            Forms\Components\TextInput::make('adjustment_account_no')
+                            TextInput::make('adjustment_account_no')
                                 ->label('Adjustment Account No (adjustmentAccountNo)')
                                 ->placeholder('misal: 4000.01.01')
                                 ->maxLength(50)
@@ -120,30 +138,30 @@ class ItemAdjustmentUploadResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')
+                TextColumn::make('user.name')
                     ->label('Nama')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('trans_date')
+                TextColumn::make('trans_date')
                     ->date('d/m/Y')
                     ->label('Trans Date')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('description')
+                TextColumn::make('description')
                     ->limit(40)
                     ->tooltip(fn($state) => $state),
 
                 // ==========================
                 // INLINE EDIT (adjustment_account_no)
                 // ==========================
-                Tables\Columns\TextInputColumn::make('adjustment_account_no')
+                TextInputColumn::make('adjustment_account_no')
                     ->label('Adjustment Acc No')
                     ->rules(['required', 'max:50'])
                     // ✅ inline edit hanya kalau record boleh diedit
                     ->disabled(fn(ItemAdjustmentUpload $record) => ! static::canEditRecord($record))
                     ->extraAttributes(['class' => 'font-mono text-xs']),
 
-                Tables\Columns\TextColumn::make('status')
+                TextColumn::make('status')
                     ->badge()
                     ->color(fn($state) => match ($state) {
                         'pending'    => 'warning',
@@ -154,14 +172,14 @@ class ItemAdjustmentUploadResource extends Resource
                     })
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('accurate_number')
+                TextColumn::make('accurate_number')
                     ->label('Accurate Number')
                     ->copyable()
                     ->searchable()
                     ->badge()
                     ->color(fn($state) => $state ? 'info' : 'gray'),
 
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->label('Dibuat')
                     ->formatStateUsing(
                         fn($state) =>
@@ -171,22 +189,22 @@ class ItemAdjustmentUploadResource extends Resource
             ->filters([
                 TrashedFilter::make(),
             ])
-            ->actions([
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\ViewAction::make(),
+            ->recordActions([
+                ActionGroup::make([
+                    ViewAction::make(),
 
                     // ✅ tombol Edit (buka halaman edit)
-                    Tables\Actions\EditAction::make()
+                    EditAction::make()
                         ->visible(fn(ItemAdjustmentUpload $record) => static::canEditRecord($record)),
 
-                    Tables\Actions\Action::make('download')
+                    Action::make('download')
                         ->label('Download File')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->visible(fn(ItemAdjustmentUpload $record) => filled($record->path))
                         ->url(fn(ItemAdjustmentUpload $record) => Storage::disk('public')->url($record->path))
                         ->openUrlInNewTab(),
 
-                    Tables\Actions\Action::make('resetAccurate')
+                    Action::make('resetAccurate')
                         ->label('Reset Accurate')
                         ->icon('heroicon-o-arrow-path')
                         ->color('warning')
@@ -232,7 +250,7 @@ class ItemAdjustmentUploadResource extends Resource
                                 ->send();
                         }),
 
-                    Tables\Actions\Action::make('resendAccurate')
+                    Action::make('resendAccurate')
                         ->label('Kirim Ulang ke Accurate')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
@@ -257,7 +275,7 @@ class ItemAdjustmentUploadResource extends Resource
                                 return;
                             }
 
-                            /** @var \App\Services\Accurate\ItemAdjustmentImporter $importer */
+                            /** @var ItemAdjustmentImporter $importer */
                             $importer = app(ItemAdjustmentImporter::class);
                             $importer->process($record);
 
@@ -277,13 +295,13 @@ class ItemAdjustmentUploadResource extends Resource
                             }
                         }),
 
-                    Tables\Actions\DeleteAction::make(),
-                    Tables\Actions\ForceDeleteAction::make(),
-                    Tables\Actions\RestoreAction::make(),
+                    DeleteAction::make(),
+                    ForceDeleteAction::make(),
+                    RestoreAction::make(),
                 ]),
             ])
-            ->actionsPosition(ActionsPosition::BeforeColumns)
-            ->bulkActions([])
+            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
+            ->toolbarActions([])
             ->defaultSort('created_at', 'desc');
     }
 
@@ -298,11 +316,11 @@ class ItemAdjustmentUploadResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListItemAdjustmentUploads::route('/'),
-            'create' => Pages\CreateItemAdjustmentUpload::route('/create'),
-            'view'   => Pages\ViewItemAdjustmentUpload::route('/{record}'),
+            'index'  => ListItemAdjustmentUploads::route('/'),
+            'create' => CreateItemAdjustmentUpload::route('/create'),
+            'view'   => ViewItemAdjustmentUpload::route('/{record}'),
             // ✅ route edit
-            'edit'   => Pages\EditItemAdjustmentUpload::route('/{record}/edit'),
+            'edit'   => EditItemAdjustmentUpload::route('/{record}/edit'),
         ];
     }
 }

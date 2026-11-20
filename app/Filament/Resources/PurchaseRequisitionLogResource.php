@@ -2,10 +2,13 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Actions\Action;
+use App\Filament\Resources\PurchaseRequisitionLogResource\Pages\ListPurchaseRequisitionLogs;
 use App\Filament\Resources\PurchaseRequisitionLogResource\Pages;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -17,9 +20,9 @@ class PurchaseRequisitionLogResource extends Resource
     protected static ?string $model = PurchaseRequisition::class;
 
     protected static ?string $slug = 'purchase-requisition-logs';
-    protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-clipboard-document-list';
     protected static ?string $navigationLabel = 'Log Permintaan Barang';
-    protected static ?string $navigationGroup = 'Laporan';
+    protected static string | \UnitEnum | null $navigationGroup = 'Laporan';
     protected static ?string $modelLabel = 'Log Permintaan Barang';
     protected static ?string $pluralModelLabel = 'Log Permintaan Barang';
     protected static ?int $navigationSort = 4;
@@ -62,20 +65,20 @@ class PurchaseRequisitionLogResource extends Resource
         return false;
     }
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([]);
+        return $schema->components([]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->label('Dibuat Pada')
                     ->dateTime('d/m/Y H:i')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('creator_display')
+                TextColumn::make('creator_display')
                     ->label('Dibuat Oleh')
                     ->state(fn(PurchaseRequisition $record): string => self::creatorName($record))
                     ->searchable(query: function (Builder $query, string $search): Builder {
@@ -84,61 +87,61 @@ class PurchaseRequisitionLogResource extends Resource
                                 ->orWhereHas('user', fn(Builder $userQuery) => $userQuery->where('name', 'like', "%{$search}%"));
                         });
                     }),
-                Tables\Columns\TextColumn::make('accurate_number')
+                TextColumn::make('accurate_number')
                     ->label('Nomor Draft Accurate')
                     ->placeholder('-')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('trans_date')
+                TextColumn::make('trans_date')
                     ->label('Tanggal Permintaan')
                     ->date('d/m/Y')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('branch_name')
+                TextColumn::make('branch_name')
                     ->label('Cabang')
                     ->placeholder('-')
                     ->badge()
                     ->color('info')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('description')
+                TextColumn::make('description')
                     ->label('Divisi Outlet')
                     ->placeholder('-')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('item_summary')
+                TextColumn::make('item_summary')
                     ->label('Ringkasan Barang')
                     ->state(fn(PurchaseRequisition $record): string => self::itemSummary($record))
                     ->html()
                     ->wrap(),
-                Tables\Columns\TextColumn::make('items_count')
+                TextColumn::make('items_count')
                     ->label('Jumlah Item')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('items_total_price')
+                TextColumn::make('items_total_price')
                     ->label('Total Referensi')
                     ->formatStateUsing(fn($state): string => self::rupiah($state))
                     ->alignRight()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('status')
+                TextColumn::make('status')
                     ->label('Status')
                     ->formatStateUsing(fn(?string $state): string => self::localStatusLabel($state))
                     ->badge()
                     ->color(fn(?string $state): string => self::localStatusColor($state)),
-                Tables\Columns\TextColumn::make('accurate_status')
+                TextColumn::make('accurate_status')
                     ->label('Status Accurate')
                     ->placeholder('-')
                     ->badge()
                     ->color('gray'),
-                Tables\Columns\TextColumn::make('send_result')
+                TextColumn::make('send_result')
                     ->label('Hasil Kirim')
                     ->state(fn(PurchaseRequisition $record): string => self::sendResultLabel($record))
                     ->badge()
                     ->color(fn(PurchaseRequisition $record): string => self::sendResultColor($record)),
-                Tables\Columns\TextColumn::make('last_edit_log')
+                TextColumn::make('last_edit_log')
                     ->label('Aktivitas Edit')
                     ->state(fn(PurchaseRequisition $record): string => self::lastEditSummary($record))
                     ->html()
                     ->wrap(),
             ])
-            ->actions([
-                Tables\Actions\Action::make('detail')
+            ->recordActions([
+                Action::make('detail')
                     ->label('Detail')
                     ->icon('heroicon-o-eye')
                     ->modalHeading(fn(PurchaseRequisition $record): string => self::detailModalHeading($record))
@@ -148,7 +151,7 @@ class PurchaseRequisitionLogResource extends Resource
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup')
                     ->modalWidth('7xl'),
-                Tables\Actions\Action::make('editHistory')
+                Action::make('editHistory')
                     ->label('Riwayat Edit')
                     ->icon('heroicon-o-clock')
                     ->visible(fn(PurchaseRequisition $record): bool => $record->activityLogs->isNotEmpty())
@@ -160,7 +163,7 @@ class PurchaseRequisitionLogResource extends Resource
                     ->modalCancelActionLabel('Tutup')
                     ->modalWidth('4xl'),
             ])
-            ->bulkActions([])
+            ->toolbarActions([])
             ->defaultSort('created_at', 'desc');
     }
 
@@ -185,7 +188,7 @@ class PurchaseRequisitionLogResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListPurchaseRequisitionLogs::route('/'),
+            'index' => ListPurchaseRequisitionLogs::route('/'),
         ];
     }
 

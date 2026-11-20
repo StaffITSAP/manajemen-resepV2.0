@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use Filament\Tables\Columns\TextColumn;
 use App\Models\Produksi;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -19,18 +20,18 @@ class TabelProduksiTerbaru extends BaseWidget
                 Produksi::query()->latest()->limit(5)
             )
             ->columns([
-                Tables\Columns\TextColumn::make('nomor_produksi')
+                TextColumn::make('nomor_produksi')
                     ->searchable(),
-                    Tables\Columns\TextColumn::make('accurate_rollover_number')
+                    TextColumn::make('accurate_rollover_number')
                     ->searchable()
                     ->label('Penyelesaian Pesanan'),
-                Tables\Columns\TextColumn::make('accurate_number')
+                TextColumn::make('accurate_number')
                     ->searchable()
                     ->label('Pekerjaan Pesanan'),
-                Tables\Columns\TextColumn::make('tanggal')
+                TextColumn::make('tanggal')
                     ->date('d/m/Y')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('status')
+                TextColumn::make('status')
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
                         'draft' => 'gray',
@@ -44,9 +45,9 @@ class TabelProduksiTerbaru extends BaseWidget
                         'selesai' => 'Selesai',
                         'batal' => 'Batal',
                     }),
-                Tables\Columns\TextColumn::make('user.name')
+                TextColumn::make('user.name')
                     ->label('Dibuat Oleh'),
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime('d/m/Y H:i')
                     ->sortable(),
             ]);

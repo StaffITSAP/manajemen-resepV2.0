@@ -2,8 +2,17 @@
 
 namespace App\Filament\Resources\MasterBarangResource\RelationManagers;
 
+use Filament\Schemas\Schema;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -18,17 +27,17 @@ class BahanResepRelationManager extends RelationManager
 
     protected static ?string $modelLabel = 'Bahan Resep';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\Select::make('resep_id')
+        return $schema
+            ->components([
+                Select::make('resep_id')
                     ->relationship('resep', 'nama')
                     ->required(),
-                Forms\Components\TextInput::make('jumlah')
+                TextInput::make('jumlah')
                     ->required()
                     ->numeric(),
-                Forms\Components\Textarea::make('catatan')
+                Textarea::make('catatan')
                     ->maxLength(65535)
                     ->columnSpanFull(),
             ]);
@@ -39,14 +48,14 @@ class BahanResepRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('resep.nama')
             ->columns([
-                Tables\Columns\TextColumn::make('resep.nama')
+                TextColumn::make('resep.nama')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('jumlah')
+                TextColumn::make('jumlah')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('catatan')
+                TextColumn::make('catatan')
                     ->limit(50),
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -55,15 +64,15 @@ class BahanResepRelationManager extends RelationManager
                 //
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make(),
+                CreateAction::make(),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+            ->recordActions([
+                EditAction::make(),
+                DeleteAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

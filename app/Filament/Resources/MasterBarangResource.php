@@ -2,13 +2,35 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Actions\ViewAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\RestoreBulkAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use App\Filament\Resources\MasterBarangResource\RelationManagers\ResepRelationManager;
+use App\Filament\Resources\MasterBarangResource\RelationManagers\BahanResepRelationManager;
+use App\Filament\Resources\MasterBarangResource\Pages\ListMasterBarangs;
+use App\Filament\Resources\MasterBarangResource\Pages\CreateMasterBarang;
+use App\Filament\Resources\MasterBarangResource\Pages\EditMasterBarang;
 use App\Filament\Resources\MasterBarangResource\Pages;
 use App\Filament\Resources\MasterBarangResource\RelationManagers;
 use App\Models\MasterBarang;
 use App\Models\MasterSatuan;
 use App\Models\AccurateItem;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -20,18 +42,18 @@ class MasterBarangResource extends Resource
 {
     protected static ?string $model = MasterBarang::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-cube';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-cube';
     protected static ?string $navigationLabel = 'Barang';
-    protected static ?string $navigationGroup = 'Master Data';
+    protected static string | \UnitEnum | null $navigationGroup = 'Master Data';
     protected static ?string $modelLabel = 'Barang';
     protected static ?string $pluralModelLabel = 'Barang';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
+        return $schema
+            ->components([
                 // === Pilih Nama Barang dari Accurate Items ===
-                Forms\Components\Select::make('nama')
+                Select::make('nama')
                     ->label('Nama Barang')
                     ->required()
                     ->options(
@@ -62,7 +84,7 @@ class MasterBarangResource extends Resource
                     ]),
 
                 // === Kode Barang otomatis dari Accurate ===
-                Forms\Components\TextInput::make('kode')
+                TextInput::make('kode')
                     ->label('Kode (dari Accurate)')
                     ->disabled()
                     ->dehydrated() // tetap disimpan ke database
@@ -77,13 +99,13 @@ class MasterBarangResource extends Resource
                         'required' => 'Kode wajib diisi.',
                     ]),
 
-                Forms\Components\Select::make('satuan_id')
+                Select::make('satuan_id')
                     ->label('Satuan')
                     ->required()
                     ->options(MasterSatuan::where('status_aktif', true)->pluck('nama', 'id'))
                     ->searchable(),
 
-                Forms\Components\Select::make('jenis')
+                Select::make('jenis')
                     ->required()
                     ->options([
                         'bahan' => 'Bahan',
@@ -91,19 +113,19 @@ class MasterBarangResource extends Resource
                         'jadi' => 'Barang Jadi',
                     ]),
 
-                Forms\Components\TextInput::make('stok')
+                TextInput::make('stok')
                     ->numeric()
                     ->default(0),
 
-                Forms\Components\TextInput::make('stok_minimal')
+                TextInput::make('stok_minimal')
                     ->numeric()
                     ->default(0),
 
-                Forms\Components\Textarea::make('deskripsi')
+                Textarea::make('deskripsi')
                     ->maxLength(65535)
                     ->columnSpanFull(),
 
-                Forms\Components\Toggle::make('status_aktif')
+                Toggle::make('status_aktif')
                     ->required()
                     ->default(true),
             ]);
@@ -113,18 +135,18 @@ class MasterBarangResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('kode')
+                TextColumn::make('kode')
                     ->label('Kode')
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('nama')
+                TextColumn::make('nama')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('satuan.nama')
+                TextColumn::make('satuan.nama')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('jenis')
+                TextColumn::make('jenis')
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
                         'bahan' => 'info',
@@ -137,52 +159,52 @@ class MasterBarangResource extends Resource
                         'jadi' => 'Jadi',
                     }),
 
-                Tables\Columns\TextColumn::make('stok')
+                TextColumn::make('stok')
                     ->numeric()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('stok_minimal')
+                TextColumn::make('stok_minimal')
                     ->numeric()
                     ->sortable(),
 
-                Tables\Columns\IconColumn::make('status_aktif')
+                IconColumn::make('status_aktif')
                     ->boolean(),
 
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('updated_at')
+                TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
-                Tables\Filters\TrashedFilter::make(),
-                Tables\Filters\SelectFilter::make('jenis')->options([
+                TrashedFilter::make(),
+                SelectFilter::make('jenis')->options([
                     'bahan' => 'Bahan',
                     'setengah_jadi' => 'Barang 1/2 Jadi',
                     'jadi' => 'Barang Jadi',
                 ]),
-                Tables\Filters\SelectFilter::make('status_aktif')->options([
+                SelectFilter::make('status_aktif')->options([
                     '1' => 'Aktif',
                     '0' => 'Nonaktif',
                 ]),
             ])
-            ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-                Tables\Actions\RestoreAction::make(),
-                Tables\Actions\ForceDeleteAction::make(),
+            ->recordActions([
+                ViewAction::make(),
+                EditAction::make(),
+                DeleteAction::make(),
+                RestoreAction::make(),
+                ForceDeleteAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                    Tables\Actions\RestoreBulkAction::make(),
-                    Tables\Actions\ForceDeleteBulkAction::make(),
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }
@@ -190,17 +212,17 @@ class MasterBarangResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\ResepRelationManager::class,
-            RelationManagers\BahanResepRelationManager::class,
+            ResepRelationManager::class,
+            BahanResepRelationManager::class,
         ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListMasterBarangs::route('/'),
-            'create' => Pages\CreateMasterBarang::route('/create'),
-            'edit'   => Pages\EditMasterBarang::route('/{record}'),
+            'index'  => ListMasterBarangs::route('/'),
+            'create' => CreateMasterBarang::route('/create'),
+            'edit'   => EditMasterBarang::route('/{record}'),
         ];
     }
 

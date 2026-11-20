@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ProduksiResource\RelationManagers;
 
+use Filament\Tables\Columns\TextColumn;
 use App\Models\ItemProduksi;
 use App\Models\Resep;
 use Filament\Tables;
@@ -19,11 +20,11 @@ class BahanDibutuhkanRelationManager extends RelationManager
         return $table
             ->heading('Daftar semua bahan yang dibutuhkan untuk produksi ini')
             ->columns([
-                Tables\Columns\TextColumn::make('nama_bahan')
+                TextColumn::make('nama_bahan')
                     ->label('Nama Bahan')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('jumlah')
+                TextColumn::make('jumlah')
                     ->label('Jumlah Total')
                     ->numeric(2)
                     ->sortable()
@@ -39,10 +40,10 @@ class BahanDibutuhkanRelationManager extends RelationManager
                             : number_format($state, 2, ',', '.');
                     }),
 
-                Tables\Columns\TextColumn::make('satuan')
+                TextColumn::make('satuan')
                     ->label('Satuan'),
 
-                Tables\Columns\TextColumn::make('resep_nama')
+                TextColumn::make('resep_nama')
                     ->label('Resep')
                     ->state(function ($record) {
                         // Mengambil nama resep berdasarkan barang_setengah_jadi_id
@@ -52,8 +53,8 @@ class BahanDibutuhkanRelationManager extends RelationManager
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->headerActions([]) // read-only
-            ->actions([])       // read-only
-            ->bulkActions([])   // read-only
+            ->recordActions([])       // read-only
+            ->toolbarActions([])   // read-only
             ->modifyQueryUsing(function (Builder $query) {
                 $ownerId = $this->ownerRecord->id;
 

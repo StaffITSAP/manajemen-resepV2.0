@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\LogPerubahanResource\Pages;
 
+use Filament\Actions\DeleteAction;
 use App\Filament\Resources\LogPerubahanResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
@@ -13,7 +14,7 @@ class EditLogPerubahan extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            DeleteAction::make(),
         ];
     }
     protected function getRedirectUrl(): string

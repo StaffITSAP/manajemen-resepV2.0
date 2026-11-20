@@ -2,14 +2,17 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Tables\Columns\TextColumn;
+use Filament\Actions\Action;
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Grid;
+use App\Filament\Resources\AccurateJobOrderResource\Pages\ListAccurateJobOrders;
 use App\Filament\Resources\AccurateJobOrderResource\Pages;
 use App\Models\AccurateJobOrder;
 use Filament\Forms;
-use Filament\Infolists\Components\Grid;
-use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\RepeatableEntry;
-use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -18,9 +21,9 @@ class AccurateJobOrderResource extends Resource
 {
     protected static ?string $model = AccurateJobOrder::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-clipboard-document-check';
     protected static ?string $navigationLabel = 'Job Order Accurate';
-    protected static ?string $navigationGroup = 'Accurate Online';
+    protected static string | \UnitEnum | null $navigationGroup = 'Accurate Online';
     protected static ?string $modelLabel = 'Job Order Accurate';
     protected static ?string $pluralModelLabel = 'Job Order Accurate';
 
@@ -28,17 +31,17 @@ class AccurateJobOrderResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('number')
+                TextColumn::make('number')
                     ->label('Nomor #')
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('trans_date')
+                TextColumn::make('trans_date')
                     ->label('Tanggal')
                     ->date('d/m/Y')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('status_name')
+                TextColumn::make('status_name')
                     ->label('Status')
                     ->badge()
                     ->color(fn($state) => match (strtoupper((string) $state)) {
@@ -47,25 +50,25 @@ class AccurateJobOrderResource extends Resource
                         default              => 'gray',
                     }),
 
-                Tables\Columns\TextColumn::make('branch.name')
+                TextColumn::make('branch.name')
                     ->label('Cabang')
                     ->badge()
                     ->color('info')
                     ->alignCenter()
                     ->tooltip(fn($record) => $record->branch?->description ?? 'Cabang Accurate')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('warehouse_name')->label('Gudang'),
+                TextColumn::make('warehouse_name')->label('Gudang'),
 
                 // Tables\Columns\TextColumn::make('total_item')
                 //     ->label('Total Item')
                 //     ->numeric(2)
                 //     ->alignRight(),
 
-                Tables\Columns\TextColumn::make('total_amount')
+                TextColumn::make('total_amount')
                     ->label('Alokasi Biaya')
                     ->money('IDR', true),
 
-                Tables\Columns\TextColumn::make('raw.description')
+                TextColumn::make('raw.description')
                     ->label('Keterangan')
                     ->limit(50)
                     ->wrap()
@@ -74,8 +77,8 @@ class AccurateJobOrderResource extends Resource
             ])
             ->filters([])
             ->defaultSort('number', 'desc')
-            ->actions([
-                Tables\Actions\Action::make('detail')
+            ->recordActions([
+                Action::make('detail')
                     ->label('Detail')
                     ->icon('heroicon-o-eye')
                     ->color('primary')
@@ -85,8 +88,8 @@ class AccurateJobOrderResource extends Resource
                     ->modalWidth('screen')
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup')
-                    ->infolist(function (Infolist $infolist) {
-                        return $infolist->schema([
+                    ->schema(function (Schema $schema) {
+                        return $schema->components([
                             Section::make('Ringkasan')
                                 ->schema([
                                     Grid::make(['default' => 1, 'md' => 2, 'xl' => 4])
@@ -153,7 +156,7 @@ class AccurateJobOrderResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListAccurateJobOrders::route('/'),
+            'index' => ListAccurateJobOrders::route('/'),
         ];
     }
 }

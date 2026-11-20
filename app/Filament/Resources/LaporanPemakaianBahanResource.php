@@ -2,13 +2,27 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Actions\ActionGroup;
+use Filament\Actions\Action;
+use Filament\Tables\Enums\RecordActionsPosition;
+use Filament\Actions\BulkActionGroup;
+use App\Filament\Resources\LaporanPemakaianBahanResource\Pages\ListLaporanPemakaianBahans;
+use Illuminate\Support\Carbon;
+use App\Models\Resep;
+use App\Models\ItemProduksiHasil;
+use App\Models\ProduksiAccurateDoc;
+use Throwable;
 use App\Filament\Resources\LaporanPemakaianBahanResource\Pages;
 use App\Models\Produksi;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Enums\ActionsPosition;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -26,10 +40,10 @@ class LaporanPemakaianBahanResource extends Resource
 {
     protected static ?string $model = Produksi::class;
 
-    protected static ?string $navigationIcon  = 'heroicon-o-document-chart-bar';
+    protected static string | \BackedEnum | null $navigationIcon  = 'heroicon-o-document-chart-bar';
     protected static ?string $navigationLabel = 'Laporan Pemakaian Bahan';
     protected static ?string $label = 'Laporan Pemakaian Bahan';
-    protected static ?string $navigationGroup = 'Laporan';
+    protected static string | \UnitEnum | null $navigationGroup = 'Laporan';
     protected static ?int    $navigationSort  = 1;
 
     public static function shouldRegisterNavigation(): bool
@@ -37,13 +51,13 @@ class LaporanPemakaianBahanResource extends Resource
         return Gate::allows('viewReportBahan', Produksi::class);
     }
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
-                Forms\Components\DatePicker::make('dari_tanggal')->label('Dari Tanggal'),
-                Forms\Components\DatePicker::make('sampai_tanggal')->label('Sampai Tanggal'),
-                Forms\Components\Select::make('status')
+        return $schema
+            ->components([
+                DatePicker::make('dari_tanggal')->label('Dari Tanggal'),
+                DatePicker::make('sampai_tanggal')->label('Sampai Tanggal'),
+                Select::make('status')
                     ->options([
                         'selesai'  => 'Selesai',
                         'diproses' => 'Diproses',
@@ -58,22 +72,22 @@ class LaporanPemakaianBahanResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')
+                TextColumn::make('user.name')
                     ->label('Nama')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('nomor_produksi')
+                TextColumn::make('nomor_produksi')
                     ->searchable()
                     ->label('No. Produksi'),
-                Tables\Columns\TextColumn::make('accurate_number')
+                TextColumn::make('accurate_number')
                     ->searchable()
                     ->label('No. Accurate')
                     ->description(fn(Produksi $record) => ($record->accurate_rollover_number ?? '-')),
-                Tables\Columns\TextColumn::make('tanggal')
+                TextColumn::make('tanggal')
                     ->date('d F Y')
                     ->sortable()
                     ->label('Tanggal'),
-                Tables\Columns\TextColumn::make('barang_setengah_jadi_list_with_selisih')
+                TextColumn::make('barang_setengah_jadi_list_with_selisih')
                     ->label('Barang 1/2 Jadi')
                     ->state(function (Produksi $r) {
                         $fmt = function ($v) {
@@ -158,9 +172,9 @@ class LaporanPemakaianBahanResource extends Resource
                         },
                     ),
 
-                Tables\Columns\TextColumn::make('bahan_list_db')
+                TextColumn::make('bahan_list_db')
                     ->label('Bahan yang Dibutuhkan')
-                    ->state(fn(\App\Models\Produksi $r) => $r->bahan_list_db)
+                    ->state(fn(Produksi $r) => $r->bahan_list_db)
                     ->html()
                     ->formatStateUsing(fn($state) => nl2br(e($state)))
                     ->wrap()
@@ -171,7 +185,7 @@ class LaporanPemakaianBahanResource extends Resource
                     ->copyMessage('Bahan dibutuhkan disalin')
                     ->copyMessageDuration(1500),
 
-                Tables\Columns\TextColumn::make('bahan_pemakaian_aktual_selisih_list')
+                TextColumn::make('bahan_pemakaian_aktual_selisih_list')
                     ->label('Pemakaian Bahan (Aktual) & Selisih')
                     ->state(fn(Produksi $r) => $r->bahan_pemakaian_aktual_selisih_list)
                     ->html()
@@ -184,7 +198,7 @@ class LaporanPemakaianBahanResource extends Resource
                     ->copyMessage('Berhasil disalin ke clipboard')
                     ->copyMessageDuration(1500),
 
-                Tables\Columns\TextColumn::make('status')
+                TextColumn::make('status')
                     ->badge()
                     ->default('draft')
                     ->color(fn(string $state): string => match ($state) {
@@ -196,10 +210,10 @@ class LaporanPemakaianBahanResource extends Resource
                     }),
             ])
             ->filters([
-                Tables\Filters\Filter::make('tanggal')
+                Filter::make('tanggal')
                     ->form([
-                        Forms\Components\DatePicker::make('dari_tanggal'),
-                        Forms\Components\DatePicker::make('sampai_tanggal'),
+                        DatePicker::make('dari_tanggal'),
+                        DatePicker::make('sampai_tanggal'),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
@@ -213,7 +227,7 @@ class LaporanPemakaianBahanResource extends Resource
                             );
                     }),
 
-                Tables\Filters\SelectFilter::make('status')
+                SelectFilter::make('status')
                     ->options([
                         'draft'    => 'Draft',
                         'diproses' => 'Diproses',
@@ -221,9 +235,9 @@ class LaporanPemakaianBahanResource extends Resource
                         'batal'    => 'Batal',
                     ]),
             ])
-            ->actions([
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('lihat_detail')
+            ->recordActions([
+                ActionGroup::make([
+                    Action::make('lihat_detail')
                         ->label('Detail Pemakaian')
                         ->icon('heroicon-o-eye')
                         ->modalHeading('Detail Pemakaian Bahan')
@@ -236,7 +250,7 @@ class LaporanPemakaianBahanResource extends Resource
                         ->modalSubmitAction(false)
                         ->modalCancelActionLabel('Tutup')
                         ->extraModalFooterActions([
-                            Tables\Actions\Action::make('print')
+                            Action::make('print')
                                 ->label('Print')
                                 ->icon('heroicon-o-printer')
                                 ->color('gray')
@@ -248,31 +262,31 @@ class LaporanPemakaianBahanResource extends Resource
                                 ->openUrlInNewTab(),
                             self::postJobOrderAction(),
                             self::postRollOverAction(),
-                            Tables\Actions\Action::make('hapus_accurate_number')
+                            Action::make('hapus_accurate_number')
                                 ->label('Hapus No Accurate')
                                 ->icon('heroicon-o-trash')
                                 ->color('danger')
                                 ->requiresConfirmation()
                                 ->modalHeading('Hapus Nomor Accurate')
-                                ->modalDescription(fn(\App\Models\Produksi $record) => sprintf(
+                                ->modalDescription(fn(Produksi $record) => sprintf(
                                     "Tindakan ini akan mengosongkan kedua kolom:\n- No Job Order: %s\n- No Rollover: %s\nLanjutkan?",
                                     $record->accurate_number ?: '—',
                                     $record->accurate_rollover_number ?: '—'
                                 ))
                                 ->visible(fn() => auth()->user()?->hasRole('superadmin'))
                                 ->disabled(
-                                    fn(\App\Models\Produksi $record) =>
+                                    fn(Produksi $record) =>
                                     blank($record->accurate_number) && blank($record->accurate_rollover_number)
                                 )
                                 ->tooltip(
-                                    fn(\App\Models\Produksi $record) => (blank($record->accurate_number) && blank($record->accurate_rollover_number))
+                                    fn(Produksi $record) => (blank($record->accurate_number) && blank($record->accurate_rollover_number))
                                         ? 'Belum ada nomor Accurate yang bisa dihapus.'
                                         : 'Hapus nomor Accurate pada record ini.'
                                 )
-                                ->action(function (\App\Models\Produksi $record) {
+                                ->action(function (Produksi $record) {
                                     DB::transaction(function () use ($record) {
-                                        /** @var \App\Models\Produksi $locked */
-                                        $locked = \App\Models\Produksi::query()
+                                        /** @var Produksi $locked */
+                                        $locked = Produksi::query()
                                             ->whereKey($record->getKey())
                                             ->lockForUpdate()
                                             ->firstOrFail();
@@ -285,7 +299,7 @@ class LaporanPemakaianBahanResource extends Resource
 
                                     $nomor = $record->nomor ?? 'record ini';
 
-                                    \Filament\Notifications\Notification::make()
+                                    Notification::make()
                                         ->title('Nomor Accurate dihapus')
                                         ->body('No Job Order dan No Rollover untuk ' . $nomor . ' berhasil dikosongkan.')
                                         ->success()
@@ -298,31 +312,31 @@ class LaporanPemakaianBahanResource extends Resource
                         ]),
                     self::postJobOrderAction(),
                     self::postRollOverAction(),
-                    Tables\Actions\Action::make('hapus_accurate_number')
+                    Action::make('hapus_accurate_number')
                         ->label('Hapus No Accurate')
                         ->icon('heroicon-o-trash')
                         ->color('danger')
                         ->requiresConfirmation()
                         ->modalHeading('Hapus Nomor Accurate')
-                        ->modalDescription(fn(\App\Models\Produksi $record) => sprintf(
+                        ->modalDescription(fn(Produksi $record) => sprintf(
                             "Tindakan ini akan mengosongkan kedua kolom:\n- No Job Order: %s\n- No Rollover: %s\nLanjutkan?",
                             $record->accurate_number ?: '—',
                             $record->accurate_rollover_number ?: '—'
                         ))
                         ->visible(fn() => auth()->user()?->hasRole('superadmin'))
                         ->disabled(
-                            fn(\App\Models\Produksi $record) =>
+                            fn(Produksi $record) =>
                             blank($record->accurate_number) && blank($record->accurate_rollover_number)
                         )
                         ->tooltip(
-                            fn(\App\Models\Produksi $record) => (blank($record->accurate_number) && blank($record->accurate_rollover_number))
+                            fn(Produksi $record) => (blank($record->accurate_number) && blank($record->accurate_rollover_number))
                                 ? 'Belum ada nomor Accurate yang bisa dihapus.'
                                 : 'Hapus nomor Accurate pada record ini.'
                         )
-                        ->action(function (\App\Models\Produksi $record) {
+                        ->action(function (Produksi $record) {
                             DB::transaction(function () use ($record) {
-                                /** @var \App\Models\Produksi $locked */
-                                $locked = \App\Models\Produksi::query()
+                                /** @var Produksi $locked */
+                                $locked = Produksi::query()
                                     ->whereKey($record->getKey())
                                     ->lockForUpdate()
                                     ->firstOrFail();
@@ -335,7 +349,7 @@ class LaporanPemakaianBahanResource extends Resource
 
                             $nomor = $record->nomor ?? 'record ini';
 
-                            \Filament\Notifications\Notification::make()
+                            Notification::make()
                                 ->title('Nomor Accurate dihapus')
                                 ->body('No Job Order dan No Rollover untuk ' . $nomor . ' berhasil dikosongkan.')
                                 ->success()
@@ -347,10 +361,10 @@ class LaporanPemakaianBahanResource extends Resource
                         }),
                 ])
             ])
-            ->actionsPosition(ActionsPosition::BeforeColumns)
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\Action::make('exportExcel')
+            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    Action::make('exportExcel')
                         ->label('Export Excel')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->visible(fn() => Gate::allows('exportReportBahan', Produksi::class))
@@ -359,9 +373,9 @@ class LaporanPemakaianBahanResource extends Resource
                             abort_unless(Gate::allows('exportReportBahan', Produksi::class), 403);
                             // TODO: isi logic export
                         })
-                        ->form([
-                            Forms\Components\DatePicker::make('dari_tanggal'),
-                            Forms\Components\DatePicker::make('sampai_tanggal'),
+                        ->schema([
+                            DatePicker::make('dari_tanggal'),
+                            DatePicker::make('sampai_tanggal'),
                         ]),
                 ]),
             ])
@@ -371,7 +385,7 @@ class LaporanPemakaianBahanResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListLaporanPemakaianBahans::route('/'),
+            'index' => ListLaporanPemakaianBahans::route('/'),
         ];
     }
 
@@ -671,7 +685,7 @@ class LaporanPemakaianBahanResource extends Resource
 
         $query = $qs . (str_contains($qs, '?') ? '&' : '?') . 'number=' . urlencode($jobNumber);
 
-        $resp = \Illuminate\Support\Facades\Http::withHeaders($headers)
+        $resp = Http::withHeaders($headers)
             ->timeout(40)
             ->withOptions(['verify' => (bool) config('accurate.verify_ssl', true)])
             ->get($url . $query);
@@ -1160,7 +1174,7 @@ class LaporanPemakaianBahanResource extends Resource
     protected static function fetchJobOrderDetailByNumberStrict(string $number)
     {
         [$url, $qs] = self::accurateEndpoint('job-order/detail.do');
-        $resp = \Illuminate\Support\Facades\Http::withHeaders(self::accurateHeaders())
+        $resp = Http::withHeaders(self::accurateHeaders())
             ->timeout(40)
             ->withOptions(['verify' => (bool) config('accurate.verify_ssl', true)])
             ->get($url . ($qs ? $qs . '&number=' . urlencode($number) : '?number=' . urlencode($number)));
@@ -1170,7 +1184,7 @@ class LaporanPemakaianBahanResource extends Resource
     protected static function fetchRolloverDetailByNumberStrict(string $number)
     {
         [$url, $qs] = self::accurateEndpoint('roll-over/detail.do');
-        $resp = \Illuminate\Support\Facades\Http::withHeaders(self::accurateHeaders())
+        $resp = Http::withHeaders(self::accurateHeaders())
             ->timeout(40)
             ->withOptions(['verify' => (bool) config('accurate.verify_ssl', true)])
             ->get($url . ($qs ? $qs . '&number=' . urlencode($number) : '?number=' . urlencode($number)));
@@ -1195,7 +1209,7 @@ class LaporanPemakaianBahanResource extends Resource
         }
 
         [$url, $qs] = self::accurateEndpoint('item/detail.do');
-        $resp = \Illuminate\Support\Facades\Http::withHeaders(self::accurateHeaders())
+        $resp = Http::withHeaders(self::accurateHeaders())
             ->timeout(30)
             ->withOptions(['verify' => (bool) config('accurate.verify_ssl', true)])
             ->get($url . ($qs ? $qs . '&number=' . urlencode($itemNo) : '?number=' . urlencode($itemNo)));
@@ -1624,7 +1638,7 @@ class LaporanPemakaianBahanResource extends Resource
         $tz = (string) config('accurate.tz', 'Asia/Jakarta');
 
         $transDate = $locked->tanggal
-            ? \Illuminate\Support\Carbon::parse($locked->tanggal, $tz)->timezone($tz)->format('d/m/Y')
+            ? Carbon::parse($locked->tanggal, $tz)->timezone($tz)->format('d/m/Y')
             : now($tz)->format('d/m/Y');
 
         return [$transDate, $tz];
@@ -1635,7 +1649,7 @@ class LaporanPemakaianBahanResource extends Resource
 
         foreach ($locked->itemProduksi as $item) {
             $nm = $item->barang?->nama ?? '-';
-            $resep = \App\Models\Resep::where('barang_setengah_jadi_id', $item->barang_setengah_jadi_id)->first();
+            $resep = Resep::where('barang_setengah_jadi_id', $item->barang_setengah_jadi_id)->first();
 
             $hasilDeskripsi = $nm;
             $jumlahTotal    = null;
@@ -1652,7 +1666,7 @@ class LaporanPemakaianBahanResource extends Resource
                 }
             }
 
-            \App\Models\ItemProduksiHasil::updateOrCreate(
+            ItemProduksiHasil::updateOrCreate(
                 ['item_produksi_id' => $item->id],
                 [
                     'nama_barang'   => $nm,
@@ -1725,7 +1739,7 @@ class LaporanPemakaianBahanResource extends Resource
             $unitSJKode = optional($ip->barangSetengahJadi?->satuan)?->kode
                 ?? optional($ip->barang_setengah_jadi?->satuan)?->kode;
 
-            $hasil = \App\Models\ItemProduksiHasil::where('item_produksi_id', $ip->id)->first();
+            $hasil = ItemProduksiHasil::where('item_produksi_id', $ip->id)->first();
 
             $qtyHasil = (float) ($hasil->jumlah_total ?? 0);
             if ($qtyHasil <= 0) {
@@ -1774,9 +1788,9 @@ class LaporanPemakaianBahanResource extends Resource
 
     /* ===================== POST ACTION ===================== */
 
-    public static function postJobOrderAction(): Tables\Actions\Action
+    public static function postJobOrderAction(): Action
     {
-        return Tables\Actions\Action::make('postJobOrder')
+        return Action::make('postJobOrder')
             ->label('POST Job Order (Pekerjaan Pesanan)')
             ->icon('heroicon-o-clipboard-document-check')
             ->color('success')
@@ -1893,12 +1907,12 @@ class LaporanPemakaianBahanResource extends Resource
                         // simpan doc JOB_ORDER (8 desimal)
                         $totalJO = self::normalizeNumberString($totalJOFloat) ?? '0.00000000';
 
-                        \App\Models\ProduksiAccurateDoc::updateOrCreate(
+                        ProduksiAccurateDoc::updateOrCreate(
                             ['produksi_id' => $locked->id, 'doc_type' => 'JOB_ORDER'],
                             [
                                 'doc_number'        => $jobNumber,
                                 'external_id'       => $joId,
-                                'trans_date'        => \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $transDate)->toDateString(),
+                                'trans_date'        => Carbon::createFromFormat('d/m/Y', $transDate)->toDateString(),
                                 'total_amount'      => $totalJO,
                                 'allocation_amount' => '0.00000000',
                                 'payload'           => $payloadJob,
@@ -1920,7 +1934,7 @@ class LaporanPemakaianBahanResource extends Resource
                         ->body($msg ?: 'Validasi gagal.')
                         ->danger()
                         ->send();
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     Notification::make()
                         ->title('Error tak terduga saat kirim Job Order')
                         ->body(substr($e->getMessage(), 0, 800))
@@ -1930,9 +1944,9 @@ class LaporanPemakaianBahanResource extends Resource
                 }
             });
     }
-    public static function postRollOverAction(): Tables\Actions\Action
+    public static function postRollOverAction(): Action
     {
-        return Tables\Actions\Action::make('postRollOver')
+        return Action::make('postRollOver')
             ->label('POST Roll Over (Penyelesaian Pesanan)')
             ->icon('heroicon-o-arrow-path-rounded-square')
             ->color('warning')
@@ -1980,7 +1994,7 @@ class LaporanPemakaianBahanResource extends Resource
                         // Pastikan total JO (ambil dari DB doc dulu kalau ada)
                         $jobNumber = (string) $locked->accurate_number;
 
-                        $docJO = \App\Models\ProduksiAccurateDoc::query()
+                        $docJO = ProduksiAccurateDoc::query()
                             ->where('produksi_id', $locked->id)
                             ->where('doc_type', 'JOB_ORDER')
                             ->first();
@@ -2130,12 +2144,12 @@ class LaporanPemakaianBahanResource extends Resource
                         $totalRO = self::normalizeNumberString($totalRO) ?? '0.00000000';
                         $allocRO = self::normalizeNumberString($allocRO) ?? '0.00000000';
 
-                        \App\Models\ProduksiAccurateDoc::updateOrCreate(
+                        ProduksiAccurateDoc::updateOrCreate(
                             ['produksi_id' => $locked->id, 'doc_type' => 'ROLL_OVER'],
                             [
                                 'doc_number'        => $rollNum,
                                 'external_id'       => $rollId,
-                                'trans_date'        => \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $transDate)->toDateString(),
+                                'trans_date'        => Carbon::createFromFormat('d/m/Y', $transDate)->toDateString(),
                                 'total_amount'      => $totalRO,
                                 'allocation_amount' => $allocRO,
                                 'payload'           => $payloadRO,
@@ -2157,7 +2171,7 @@ class LaporanPemakaianBahanResource extends Resource
                         ->body($msg ?: 'Validasi gagal.')
                         ->danger()
                         ->send();
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     Notification::make()
                         ->title('Error tak terduga saat kirim Roll Over')
                         ->body(substr($e->getMessage(), 0, 800))

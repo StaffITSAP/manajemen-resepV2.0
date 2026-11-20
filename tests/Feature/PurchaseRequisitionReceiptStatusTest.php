@@ -12,6 +12,8 @@ use App\Services\Accurate\AccurateClient;
 use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use App\Services\PurchaseRequisitions\SmartSync\PurchaseRequisitionSmartSync;
 use App\Services\PurchaseRequisitions\UpdatePurchaseRequisitionReceiptStatus;
+use Filament\Actions\Action;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Schema\Blueprint;
@@ -250,9 +252,13 @@ class PurchaseRequisitionReceiptStatusTest extends TestCase
         $this->actingAs($owner);
 
         Livewire::test(ListPurchaseRequisitions::class)
+            ->assertTableActionExists('confirmReceipt', fn (Action $action): bool =>
+                $action->getModalHeading() === 'Konfirmasi Penerimaan Barang'
+                && $action->getModalSubmitActionLabel() === 'Ya, Sudah Diterima'
+                && $action->getModalCancelActionLabel() === 'Batal'
+            , $record)
             ->mountTableAction('confirmReceipt', $record)
-            ->assertSee('Konfirmasi Penerimaan Barang')
-            ->assertSee('Ya, Sudah Diterima')
+            ->assertActionMounted(TestAction::make('confirmReceipt')->table($record))
             ->unmountTableAction();
 
         $this->assertSame(PurchaseRequisition::RECEIPT_STATUS_PENDING, $record->fresh()->receipt_status);
@@ -321,9 +327,13 @@ class PurchaseRequisitionReceiptStatusTest extends TestCase
 
         Livewire::test(ListPurchaseRequisitions::class)
             ->assertTableActionVisible('revertReceipt', $record)
+            ->assertTableActionExists('revertReceipt', fn (Action $action): bool =>
+                $action->getModalHeading() === 'Batalkan Penerimaan Barang'
+                && $action->getModalSubmitActionLabel() === 'Batalkan Penerimaan'
+                && $action->getModalCancelActionLabel() === 'Batal'
+            , $record)
             ->mountTableAction('revertReceipt', $record)
-            ->assertSee('Batalkan Penerimaan Barang')
-            ->assertSee('Batalkan Penerimaan')
+            ->assertActionMounted(TestAction::make('revertReceipt')->table($record))
             ->callMountedTableAction()
             ->assertHasNoTableActionErrors();
 

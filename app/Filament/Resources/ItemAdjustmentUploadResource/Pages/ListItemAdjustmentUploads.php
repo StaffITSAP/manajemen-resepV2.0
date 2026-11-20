@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\ItemAdjustmentUploadResource\Pages;
 
+use Filament\Actions\Action;
+use Filament\Actions\CreateAction;
 use App\Filament\Resources\ItemAdjustmentUploadResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
@@ -13,13 +15,13 @@ class ListItemAdjustmentUploads extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('downloadTemplate')
+            Action::make('downloadTemplate')
                 ->label('Download Template')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->url(route('templates.item-adjustment'))
                 ->openUrlInNewTab(),
 
-            Actions\CreateAction::make()->label('Buat'),
+            CreateAction::make()->label('Buat'),
         ];
     }
 
@@ -41,13 +43,13 @@ class ListItemAdjustmentUploads extends ListRecords
     protected function getEmptyStateActions(): array
     {
         return [
-            Actions\Action::make('downloadTemplateEmpty')
+            Action::make('downloadTemplateEmpty')
                 ->label('Download Template')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->url(route('templates.item-adjustment'))
                 ->openUrlInNewTab(),
 
-            Actions\CreateAction::make()->label('Buat'),
+            CreateAction::make()->label('Buat'),
         ];
     }
 }

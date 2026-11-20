@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Filament\Resources\PurchaseRequisitionLogResource;
 use App\Filament\Resources\PurchaseRequisitionLogResource\Pages\ListPurchaseRequisitionLogs;
 use App\Models\PurchaseRequisition;
+use Filament\Actions\Action;
+use Filament\Actions\Testing\TestAction;
 use App\Models\Role;
 use App\Models\User;
 use Filament\Facades\Filament;
@@ -233,18 +235,22 @@ class PurchaseRequisitionLogResourceTest extends TestCase
         ]);
 
         Livewire::test(ListPurchaseRequisitionLogs::class)
+            ->assertTableActionExists('detail', fn (Action $action): bool =>
+                $action->getModalHeading() === 'Detail Permintaan Barang - PR.2026.00002'
+                && $action->getModalContent() instanceof \Illuminate\Contracts\Support\Htmlable
+            , $record);
+
+        Livewire::test(ListPurchaseRequisitionLogs::class)
             ->mountTableAction('detail', $record)
-            ->assertSee('Detail Permintaan Barang - PR.2026.00002')
-            ->assertSee('Snapshot Creator')
-            ->assertSee('PR.2026.00002')
-            ->assertSee('12345')
-            ->assertSee('Berhasil')
-            ->assertSee('Alchemy 200gr')
-            ->assertSee('100069')
-            ->assertSee('Butuh cepat')
-            ->assertSee('PO.2026.08.00170')
-            ->assertDontSee('Lihat')
-            ->assertDontSee('Retry');
+            ->assertActionMounted(TestAction::make('detail')->table($record));
+
+        $detail = view('filament.components.purchase-requisition-log-detail', [
+            'record' => $record->fresh()->load(['rejecter', 'user', 'items']),
+        ])->render();
+
+        foreach (['Snapshot Creator', 'PR.2026.00002', '12345', 'Berhasil', 'Alchemy 200gr', '100069', 'Butuh cepat', 'PO.2026.08.00170'] as $text) {
+            $this->assertStringContainsString($text, $detail);
+        }
 
         $this->assertArrayNotHasKey('view', PurchaseRequisitionLogResource::getPages());
     }

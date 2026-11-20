@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\ResepResource\RelationManagers;
 
+use Filament\Schemas\Schema;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -18,10 +20,10 @@ class LogPerubahanRelationManager extends RelationManager
 
     protected static ?string $modelLabel = 'Log';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
+        return $schema
+            ->components([
                 // Tidak perlu form untuk log
             ]);
     }
@@ -31,18 +33,18 @@ class LogPerubahanRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('aksi')
             ->columns([
-                Tables\Columns\TextColumn::make('user.name')
+                TextColumn::make('user.name')
                     ->label('User'),
-                Tables\Columns\TextColumn::make('aksi')
+                TextColumn::make('aksi')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'create' => 'success',
                         'update' => 'warning',
                         'delete' => 'danger',
                     }),
-                Tables\Columns\TextColumn::make('keterangan')
+                TextColumn::make('keterangan')
                     ->limit(50),
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
             ])
@@ -52,10 +54,10 @@ class LogPerubahanRelationManager extends RelationManager
             ->headerActions([
                 // Tidak ada action untuk membuat log manual
             ])
-            ->actions([
-                Tables\Actions\ViewAction::make(),
+            ->recordActions([
+                ViewAction::make(),
             ])
-            ->bulkActions([
+            ->toolbarActions([
                 // Tidak ada bulk actions untuk log
             ]);
     }

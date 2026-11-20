@@ -8,6 +8,7 @@ use App\Models\AccurateItem;
 use App\Models\PurchaseRequisition;
 use App\Models\User;
 use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
+use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Schema\Blueprint;
@@ -231,9 +232,14 @@ class PurchaseRequisitionRetryAccurateTest extends TestCase
         $this->app->instance(PurchaseRequisitionSender::class, $sender);
 
         Livewire::test(ViewPurchaseRequisition::class, ['record' => $record->getRouteKey()])
+            ->assertActionExists('retryAccurate', fn (Action $action): bool =>
+                $action->getModalHeading() === 'Konfirmasi Kirim Ulang'
+                && str_contains((string) $action->getModalDescription(), 'Pastikan pengiriman sebelumnya benar-benar gagal')
+                && $action->getModalSubmitActionLabel() === 'Kirim Ulang'
+                && $action->getModalCancelActionLabel() === 'Batal'
+            )
             ->mountAction('retryAccurate')
-            ->assertSee('Konfirmasi Kirim Ulang')
-            ->assertSee('Pastikan pengiriman sebelumnya benar-benar gagal')
+            ->assertActionMounted('retryAccurate')
             ->unmountAction();
 
         $this->assertSame('failed', $record->fresh()->sync_status);

@@ -2,6 +2,26 @@
 
 namespace App\Filament\Resources;
 
+use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Section;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ViewColumn;
+use Filament\Actions\ViewAction;
+use Filament\Actions\Action;
+use Filament\Schemas\Components\Grid;
+use App\Filament\Resources\PurchaseRequisitionResource\Pages\ListPurchaseRequisitions;
+use App\Filament\Resources\PurchaseRequisitionResource\Pages\CreatePurchaseRequisition;
+use App\Filament\Resources\PurchaseRequisitionResource\Pages\EditPurchaseRequisition;
+use App\Filament\Resources\PurchaseRequisitionResource\Pages\ViewPurchaseRequisition;
 use App\Filament\Resources\PurchaseRequisitionResource\Pages;
 use App\Models\AccurateBranch;
 use App\Models\AccurateItem;
@@ -12,16 +32,13 @@ use App\Services\PurchaseRequisitions\Accurate\PurchaseRequisitionSender;
 use App\Services\PurchaseRequisitions\PurchaseLatestPriceResolver;
 use App\Services\PurchaseRequisitions\UpdatePurchaseRequisitionReceiptStatus;
 use Filament\Forms;
-use Filament\Forms\Form;
-use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Components\RepeatableEntry;
-use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Notifications\Notification;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -34,19 +51,19 @@ class PurchaseRequisitionResource extends Resource
 {
     protected static ?string $model = PurchaseRequisition::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-shopping-bag';
+    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-shopping-bag';
     protected static ?string $navigationLabel = 'Permintaan Barang';
-    protected static ?string $navigationGroup = 'Produksi';
+    protected static string | \UnitEnum | null $navigationGroup = 'Produksi';
     protected static ?string $modelLabel = 'Permintaan Barang';
     protected static ?string $pluralModelLabel = 'Permintaan Barang';
     protected static ?int $navigationSort = 3;
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\Section::make('Informasi Permintaan')
+        return $schema->components([
+            Section::make('Informasi Permintaan')
                 ->schema([
-                    Forms\Components\DatePicker::make('trans_date')
+                    DatePicker::make('trans_date')
                         ->label('Tanggal')
                         ->default(now())
                         ->required()
@@ -54,17 +71,17 @@ class PurchaseRequisitionResource extends Resource
                         ->displayFormat('d/m/Y')
                         ->closeOnDateSelection(),
 
-                    Forms\Components\TextInput::make('requisition_type_display')
+                    TextInput::make('requisition_type_display')
                         ->label('Tipe Permintaan')
                         ->default('Beli Barang')
                         ->disabled()
                         ->dehydrated(false),
 
-                    Forms\Components\TextInput::make('description')
+                    TextInput::make('description')
                         ->label('Divisi Outlet')
                         ->maxLength(255),
 
-                    Forms\Components\TextInput::make('branch_display')
+                    TextInput::make('branch_display')
                         ->label('Cabang')
                         ->default(fn() => self::headOfficeBranchLabel())
                         ->disabled()
@@ -75,12 +92,12 @@ class PurchaseRequisitionResource extends Resource
                 ])
                 ->columns(2),
 
-            Forms\Components\Section::make('Detail Barang')
+            Section::make('Detail Barang')
                 ->schema([
-                    Forms\Components\Repeater::make('items')
+                    Repeater::make('items')
                         ->hiddenLabel()
                         ->schema([
-                            Forms\Components\Select::make('accurate_item_id')
+                            Select::make('accurate_item_id')
                                 ->label('Nama Barang')
                                 ->placeholder('Pilih barang')
                                 ->searchable()
@@ -88,7 +105,7 @@ class PurchaseRequisitionResource extends Resource
                                 ->getSearchResultsUsing(fn(string $search): array => self::activeItemSearchResults($search))
                                 ->getOptionLabelUsing(fn($value): ?string => self::itemLabel($value))
                                 ->live()
-                                ->afterStateUpdated(function (Forms\Set $set, ?int $state) {
+                                ->afterStateUpdated(function (Set $set, ?int $state) {
                                     $set('item_no_display', self::itemNo($state));
                                     $set('item_unit_accurate_id', null);
                                     $set('latest_purchase_unit_price', null);
@@ -98,61 +115,61 @@ class PurchaseRequisitionResource extends Resource
                                     $set('price_status', null);
                                 }),
 
-                            Forms\Components\TextInput::make('item_no_display')
+                            TextInput::make('item_no_display')
                                 ->label('Kode Barang')
                                 ->disabled()
                                 ->dehydrated(false)
-                                ->formatStateUsing(fn($state, Forms\Get $get) => self::itemNo($get('accurate_item_id'))),
+                                ->formatStateUsing(fn($state, Get $get) => self::itemNo($get('accurate_item_id'))),
 
-                            Forms\Components\TextInput::make('quantity')
+                            TextInput::make('quantity')
                                 ->label('Kuantitas')
                                 ->numeric()
                                 ->required()
                                 ->minValue(0.000001)
                                 ->step('0.000001')
                                 ->live(onBlur: true)
-                                ->afterStateUpdated(fn(Forms\Set $set, Forms\Get $get) => self::refreshPriceState($set, $get)),
+                                ->afterStateUpdated(fn(Set $set, Get $get) => self::refreshPriceState($set, $get)),
 
-                            Forms\Components\Select::make('item_unit_accurate_id')
+                            Select::make('item_unit_accurate_id')
                                 ->label('Satuan')
                                 ->placeholder('Pilih satuan')
                                 ->required()
-                                ->options(fn(Forms\Get $get): array => self::unitOptions($get('accurate_item_id')))
+                                ->options(fn(Get $get): array => self::unitOptions($get('accurate_item_id')))
                                 ->searchable()
                                 ->live()
-                                ->helperText(fn(Forms\Get $get): ?string => self::unitHelperText($get('accurate_item_id')))
-                                ->afterStateUpdated(fn(Forms\Set $set, Forms\Get $get) => self::refreshPriceState($set, $get)),
+                                ->helperText(fn(Get $get): ?string => self::unitHelperText($get('accurate_item_id')))
+                                ->afterStateUpdated(fn(Set $set, Get $get) => self::refreshPriceState($set, $get)),
 
-                            Forms\Components\DatePicker::make('required_date')
+                            DatePicker::make('required_date')
                                 ->label('Tanggal Diminta')
-                                ->default(fn(Forms\Get $get) => $get('../../trans_date'))
+                                ->default(fn(Get $get) => $get('../../trans_date'))
                                 ->required()
                                 ->native(false)
                                 ->displayFormat('d/m/Y')
                                 ->closeOnDateSelection(),
 
-                            Forms\Components\Textarea::make('note')
+                            Textarea::make('note')
                                 ->label('Keterangan')
                                 ->maxLength(65535)
                                 ->columnSpanFull(),
 
-                            Forms\Components\Hidden::make('latest_purchase_unit_price'),
-                            Forms\Components\Hidden::make('total_price'),
+                            Hidden::make('latest_purchase_unit_price'),
+                            Hidden::make('total_price'),
 
-                            Forms\Components\TextInput::make('latest_price_display')
+                            TextInput::make('latest_price_display')
                                 ->label('Harga Satuan')
                                 ->disabled()
                                 ->dehydrated(false)
                                 ->placeholder('Harga pembelian terakhir belum tersedia.'),
 
-                            Forms\Components\TextInput::make('total_price_display')
+                            TextInput::make('total_price_display')
                                 ->label('Harga Total')
                                 ->disabled()
                                 ->dehydrated(false),
 
-                            Forms\Components\Placeholder::make('price_status')
+                            Placeholder::make('price_status')
                                 ->label('')
-                                ->content(fn(Forms\Get $get): ?string => self::priceHelperText($get))
+                                ->content(fn(Get $get): ?string => self::priceHelperText($get))
                                 ->columnSpanFull(),
                         ])
                         ->columns(2)
@@ -169,49 +186,49 @@ class PurchaseRequisitionResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('trans_date')
+                TextColumn::make('trans_date')
                     ->label('Tanggal')
                     ->date('d/m/Y')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('description')
+                TextColumn::make('description')
                     ->label('Divisi Outlet')
                     ->placeholder('-')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('branch_name')
+                TextColumn::make('branch_name')
                     ->label('Cabang')
                     ->badge()
                     ->color('info'),
-                Tables\Columns\TextColumn::make('request_summary')
+                TextColumn::make('request_summary')
                     ->label('Ringkasan Permintaan')
                     ->state(fn(PurchaseRequisition $record): string => self::requestSummary($record))
                     ->html()
                     ->wrap(),
-                Tables\Columns\TextColumn::make('estimated_total')
+                TextColumn::make('estimated_total')
                     ->label('Nilai Estimasi')
                     ->state(fn(PurchaseRequisition $record): float => (float) $record->items->sum('total_price'))
                     ->formatStateUsing(fn(float $state): string => 'Rp. ' . number_format($state, 2, '.', ','))
                     ->alignRight(),
-                Tables\Columns\TextColumn::make('status_summary')
+                TextColumn::make('status_summary')
                     ->label('Status')
                     ->state(fn(PurchaseRequisition $record): string => self::statusSummary($record))
                     ->html(),
-                Tables\Columns\ViewColumn::make('receipt_status')
+                ViewColumn::make('receipt_status')
                     ->label(new HtmlString('<span class="sr-only">Status Penerimaan</span><span aria-hidden="true" class="block leading-tight">Status</span><span aria-hidden="true" class="block leading-tight">Penerimaan</span>'))
                     ->view('filament.tables.columns.purchase-requisition-receipt-status'),
-                Tables\Columns\TextColumn::make('user.name')
+                TextColumn::make('user.name')
                     ->label('Dibuat Oleh')
                     ->placeholder('-')
                     ->toggleable(),
-                Tables\Columns\TextColumn::make('created_at')
+                TextColumn::make('created_at')
                     ->label('Dibuat Pada')
                     ->dateTime('d/m/Y H:i')
                     ->sortable(),
             ])
-            ->actions([
-                Tables\Actions\ViewAction::make()
+            ->recordActions([
+                ViewAction::make()
                     ->label('Lihat')
                     ->extraAttributes(['class' => 'w-20 justify-start text-left']),
-                Tables\Actions\Action::make('approve')
+                Action::make('approve')
                     ->label('Approve')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
@@ -235,7 +252,7 @@ class PurchaseRequisitionResource extends Resource
 
                         self::sendApprovedRecordToAccurate($record);
                     }),
-                Tables\Actions\Action::make('reject')
+                Action::make('reject')
                     ->label('Tolak')
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
@@ -245,8 +262,8 @@ class PurchaseRequisitionResource extends Resource
                     ->modalDescription('Anda akan menolak permintaan barang ini. Silakan isi alasan penolakan untuk melanjutkan.')
                     ->modalSubmitActionLabel('Tolak')
                     ->modalCancelActionLabel('Batal')
-                    ->form([
-                        Forms\Components\Textarea::make('rejection_reason')
+                    ->schema([
+                        Textarea::make('rejection_reason')
                             ->label('Alasan Penolakan')
                             ->placeholder('Masukkan alasan penolakan...')
                             ->required()
@@ -269,7 +286,7 @@ class PurchaseRequisitionResource extends Resource
                             return;
                         }
                     }),
-                Tables\Actions\Action::make('confirmReceipt')
+                Action::make('confirmReceipt')
                     ->label('Diterima')
                     ->extraAttributes(['class' => 'hidden'])
                     ->disabled(fn(PurchaseRequisition $record): bool => ! self::canRequesterConfirmReceipt($record))
@@ -309,7 +326,7 @@ class PurchaseRequisitionResource extends Resource
                             ->body('Barang ditandai sudah diterima.')
                             ->send();
                     }),
-                Tables\Actions\Action::make('revertReceipt')
+                Action::make('revertReceipt')
                     ->label('Batalkan Penerimaan')
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->color('warning')
@@ -352,14 +369,14 @@ class PurchaseRequisitionResource extends Resource
                             ->send();
                     }),
             ])
-            ->actionsAlignment('flex-col !items-start !justify-start gap-1')
-            ->bulkActions([])
+            ->recordActionsAlignment('flex-col !items-start !justify-start gap-1')
+            ->toolbarActions([])
             ->defaultSort('created_at', 'desc');
     }
 
-    public static function infolist(Infolist $infolist): Infolist
+    public static function infolist(Schema $schema): Schema
     {
-        return $infolist->schema([
+        return $schema->components([
             Section::make('Informasi Permintaan')
                 ->schema([
                     Grid::make(['default' => 1, 'md' => 2, 'xl' => 4])
@@ -434,10 +451,16 @@ class PurchaseRequisitionResource extends Resource
         return $user ? $query->visibleTo($user) : $query->whereRaw('0 = 1');
     }
 
-    public static function resolveRecordRouteBinding(int | string $key): ?Model
+    public static function resolveRecordRouteBinding(int | string $key, ?Closure $modifyQuery = null): ?Model
     {
+        $query = static::baseEloquentQuery();
+
+        if ($modifyQuery) {
+            $query = $modifyQuery($query) ?? $query;
+        }
+
         return app(static::getModel())
-            ->resolveRouteBindingQuery(static::baseEloquentQuery(), $key, static::getRecordRouteKeyName())
+            ->resolveRouteBindingQuery($query, $key, static::getRecordRouteKeyName())
             ->first();
     }
 
@@ -449,10 +472,10 @@ class PurchaseRequisitionResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListPurchaseRequisitions::route('/'),
-            'create' => Pages\CreatePurchaseRequisition::route('/create'),
-            'edit' => Pages\EditPurchaseRequisition::route('/{record}/edit'),
-            'view' => Pages\ViewPurchaseRequisition::route('/{record}'),
+            'index' => ListPurchaseRequisitions::route('/'),
+            'create' => CreatePurchaseRequisition::route('/create'),
+            'edit' => EditPurchaseRequisition::route('/{record}/edit'),
+            'view' => ViewPurchaseRequisition::route('/{record}'),
         ];
     }
 
@@ -523,7 +546,7 @@ class PurchaseRequisitionResource extends Resource
             : null;
     }
 
-    private static function refreshPriceState(Forms\Set $set, Forms\Get $get): void
+    private static function refreshPriceState(Set $set, Get $get): void
     {
         $item = AccurateItem::query()->find($get('accurate_item_id'));
         $unitId = (int) ($get('item_unit_accurate_id') ?? 0);
@@ -555,7 +578,7 @@ class PurchaseRequisitionResource extends Resource
         $set('total_price_display', $totalPrice === null ? null : 'Rp ' . number_format((float) $totalPrice, 0, ',', '.'));
     }
 
-    private static function priceHelperText(Forms\Get $get): ?string
+    private static function priceHelperText(Get $get): ?string
     {
         if (blank($get('accurate_item_id')) || blank($get('item_unit_accurate_id'))) {
             return null;
