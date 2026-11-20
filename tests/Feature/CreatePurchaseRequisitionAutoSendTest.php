@@ -275,6 +275,54 @@ class CreatePurchaseRequisitionAutoSendTest extends TestCase
         Log::shouldNotHaveReceived('error');
     }
 
+    public function test_reactive_quantity_preserves_large_whole_number_through_submission(): void
+    {
+        $item = $this->seedLocalDependencies();
+        $data = $this->formData($item);
+        $data['items'][0]['quantity'] = '1200';
+
+        $form = Livewire::test(CreatePurchaseRequisition::class)
+            ->set('data', $data)
+            ->set('data.items.0.quantity', '1200');
+
+        $this->assertMatchesRegularExpression(
+            '/<input\b(?=[^>]*wire:model\.live\.blur="data\.items\.0\.quantity")(?=[^>]*type="text")(?=[^>]*inputmode="decimal")[^>]*>/s',
+            $form->html(),
+        );
+        $this->assertSame('1200', $form->get('data.items.0.quantity'));
+        $this->assertSame('6000000.00000000', $form->get('data.items.0.total_price'));
+
+        $form->call('create')->assertHasNoFormErrors();
+
+        $this->assertSame('1200.000000', PurchaseRequisition::query()->firstOrFail()->items()->firstOrFail()->quantity);
+    }
+
+    public function test_reactive_decimal_quantities_and_repeater_rows_keep_their_precision(): void
+    {
+        $item = $this->seedLocalDependencies();
+        PurchaseItemLatestPrice::query()->firstOrFail()->update(['unit_price' => '1.23456789']);
+        $data = $this->formData($item);
+        $data['items'][0]['quantity'] = '1.234567';
+        $data['items'][] = [...$data['items'][0], 'quantity' => '0.123456'];
+
+        $form = Livewire::test(CreatePurchaseRequisition::class)
+            ->set('data', $data)
+            ->set('data.items.0.quantity', '1.234567')
+            ->set('data.items.1.quantity', '0.123456');
+
+        $this->assertSame('1.234567', $form->get('data.items.0.quantity'));
+        $this->assertSame('0.123456', $form->get('data.items.1.quantity'));
+        $this->assertSame('1.52415677', $form->get('data.items.0.total_price'));
+        $this->assertSame('0.15241481', $form->get('data.items.1.total_price'));
+
+        $form->call('create')->assertHasNoFormErrors();
+
+        $quantities = PurchaseRequisition::query()->firstOrFail()->items()->orderBy('id')->pluck('quantity')->all();
+        $this->assertSame(['1.234567', '0.123456'], $quantities);
+        $totals = PurchaseRequisition::query()->firstOrFail()->items()->orderBy('id')->pluck('total_price')->all();
+        $this->assertSame(['1.52415677', '0.15241481'], $totals);
+    }
+
     public function test_create_page_renders_submit_label_without_exposing_credentials(): void
     {
         $this->seedLocalDependencies();

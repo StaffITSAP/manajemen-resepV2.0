@@ -44,7 +44,7 @@ class Login extends \Filament\Auth\Pages\Login
     protected function getPasswordFormComponent(): Component
     {
         return TextInput::make('password')
-            ->label(__('filament-panels::pages/auth/login.form.password.label'))
+            ->label('Kata Sandi')
             ->password()
             ->revealable() // 👈 show/hide password
             ->required()
@@ -73,7 +73,7 @@ class Login extends \Filament\Auth\Pages\Login
     protected function throwFailureValidationException(): never
     {
         throw ValidationException::withMessages([
-            'data.login' => __('filament-panels::pages/auth/login.messages.failed'),
+            'data.login' => __('filament-panels::auth/pages/login.messages.failed'),
         ]);
     }
 }

@@ -124,10 +124,11 @@ class PurchaseRequisitionResource extends Resource
 
                             TextInput::make('quantity')
                                 ->label('Kuantitas')
-                                ->numeric()
+                                ->type('text')
+                                ->inputMode('decimal')
+                                ->rule('numeric')
                                 ->required()
                                 ->minValue(0.000001)
-                                ->step('0.000001')
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::refreshPriceState($set, $get)),
 
@@ -574,13 +575,22 @@ class PurchaseRequisitionResource extends Resource
 
         $unitPrice = (string) $latestPrice->price;
         $totalPrice = is_numeric($quantity) && (float) $quantity > 0
-            ? number_format(((float) $quantity) * ((float) $unitPrice), 8, '.', '')
+            ? self::multiplyDecimal($quantity, $unitPrice)
             : null;
 
         $set('latest_purchase_unit_price', $unitPrice);
         $set('latest_price_display', 'Rp ' . number_format((float) $unitPrice, 0, ',', '.'));
         $set('total_price', $totalPrice);
         $set('total_price_display', $totalPrice === null ? null : 'Rp ' . number_format((float) $totalPrice, 0, ',', '.'));
+    }
+
+    private static function multiplyDecimal(string $quantity, string $unitPrice): string
+    {
+        if (function_exists('bcmul')) {
+            return bcmul($quantity, $unitPrice, 8);
+        }
+
+        return number_format(((float) $quantity) * ((float) $unitPrice), 8, '.', '');
     }
 
     private static function priceHelperText(Get $get): ?string
