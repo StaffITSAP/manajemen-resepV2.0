@@ -63,6 +63,7 @@ class PurchaseRequisitionResource extends Resource
     {
         return $schema->components([
             Section::make('Informasi Permintaan')
+                ->extraAttributes(['class' => 'pr-form-section pr-form-section--info'])
                 ->schema([
                     DatePicker::make('trans_date')
                         ->label('Tanggal')
@@ -76,7 +77,8 @@ class PurchaseRequisitionResource extends Resource
                         ->label('Tipe Permintaan')
                         ->default('Beli Barang')
                         ->disabled()
-                        ->dehydrated(false),
+                        ->dehydrated(false)
+                        ->extraFieldWrapperAttributes(['class' => 'pr-form-readonly-field']),
 
                     TextInput::make('description')
                         ->label('Divisi Outlet')
@@ -89,15 +91,18 @@ class PurchaseRequisitionResource extends Resource
                         ->dehydrated(false)
                         ->helperText(fn() => AccurateBranch::query()->where('name', 'Kantor Pusat')->exists()
                             ? null
-                            : 'Cabang Kantor Pusat belum tersedia di cache lokal.'),
+                            : 'Cabang Kantor Pusat belum tersedia di cache lokal.')
+                        ->extraFieldWrapperAttributes(['class' => 'pr-form-readonly-field']),
                 ])
                 ->columns(2)
                 ->columnSpanFull(),
 
             Section::make('Detail Barang')
+                ->extraAttributes(['class' => 'pr-form-section pr-form-section--items'])
                 ->schema([
                     Repeater::make('items')
                         ->hiddenLabel()
+                        ->extraAttributes(['class' => 'pr-form-repeater'])
                         ->schema([
                             Select::make('accurate_item_id')
                                 ->label('Nama Barang')
@@ -137,7 +142,8 @@ class PurchaseRequisitionResource extends Resource
                             TextInput::make('item_no_display')
                                 ->label('Kode Barang')
                                 ->disabled()
-                                ->dehydrated(false),
+                                ->dehydrated(false)
+                                ->extraFieldWrapperAttributes(['class' => 'pr-form-readonly-field']),
 
                             TextInput::make('quantity')
                                 ->label('Kuantitas')
@@ -193,12 +199,14 @@ class PurchaseRequisitionResource extends Resource
                                 ->label('Harga Satuan')
                                 ->disabled()
                                 ->dehydrated(false)
-                                ->placeholder('Harga pembelian terakhir belum tersedia.'),
+                                ->placeholder('Harga pembelian terakhir belum tersedia.')
+                                ->extraFieldWrapperAttributes(['class' => 'pr-form-price-field pr-form-price-field--unit']),
 
                             TextInput::make('total_price_display')
                                 ->label('Harga Total')
                                 ->disabled()
-                                ->dehydrated(false),
+                                ->dehydrated(false)
+                                ->extraFieldWrapperAttributes(['class' => 'pr-form-price-field pr-form-price-field--total']),
 
                             Placeholder::make('price_status')
                                 ->label('')

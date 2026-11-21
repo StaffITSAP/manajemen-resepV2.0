@@ -30,6 +30,7 @@ class CreatePurchaseRequisition extends CreateRecord
     {
         return parent::getCreateFormAction()
             ->label('Submit')
+            ->extraAttributes(['class' => 'pr-form-submit'], merge: true)
             ->requiresConfirmation()
             ->modalHeading('Konfirmasi Permintaan Barang')
             ->modalDescription('Permintaan Barang akan disimpan dan menunggu approval SPV sebelum dikirim ke Accurate.')
@@ -40,7 +41,8 @@ class CreatePurchaseRequisition extends CreateRecord
     protected function getCancelFormAction(): Action
     {
         return parent::getCancelFormAction()
-            ->label('Batal');
+            ->label('Batal')
+            ->extraAttributes(['class' => 'pr-form-cancel'], merge: true);
     }
 
     protected function getRedirectUrl(): string

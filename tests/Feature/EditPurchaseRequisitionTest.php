@@ -212,7 +212,14 @@ class EditPurchaseRequisitionTest extends TestCase
         $this->actingAs($user);
 
         $edit = Livewire::test(EditPurchaseRequisition::class, ['record' => $record->getRouteKey()])
-            ->assertSuccessful();
+            ->assertSuccessful()
+            ->assertSee('pr-form-section--info')
+            ->assertSee('pr-form-section--items')
+            ->assertSee('pr-form-repeater')
+            ->assertSee('pr-form-price-field--unit')
+            ->assertSee('pr-form-price-field--total')
+            ->assertSee('pr-form-submit')
+            ->assertSee('pr-form-cancel');
 
         $itemState = array_values($edit->get('data.items'))[0];
         $this->assertSame('10.000000', $itemState['quantity']);

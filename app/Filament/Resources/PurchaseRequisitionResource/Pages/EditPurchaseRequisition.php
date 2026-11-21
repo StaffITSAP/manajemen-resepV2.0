@@ -114,13 +114,15 @@ class EditPurchaseRequisition extends EditRecord
     protected function getSaveFormAction(): Action
     {
         return parent::getSaveFormAction()
-            ->label('Simpan Perubahan');
+            ->label('Simpan Perubahan')
+            ->extraAttributes(['class' => 'pr-form-submit'], merge: true);
     }
 
     protected function getCancelFormAction(): Action
     {
         return parent::getCancelFormAction()
-            ->label('Batal');
+            ->label('Batal')
+            ->extraAttributes(['class' => 'pr-form-cancel'], merge: true);
     }
 
     protected function getRedirectUrl(): string

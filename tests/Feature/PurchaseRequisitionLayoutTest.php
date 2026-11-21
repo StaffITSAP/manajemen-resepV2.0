@@ -19,6 +19,20 @@ class PurchaseRequisitionLayoutTest extends TestCase
         $this->assertSame('full', $sections[0]->getColumnSpan('default'));
         $this->assertSame('full', $sections[1]->getColumnSpan('default'));
         $this->assertSame(2, $sections[0]->getColumns('lg'));
+        $this->assertSame('pr-form-section pr-form-section--info', $sections[0]->getExtraAttributes()['class']);
+        $this->assertSame('pr-form-section pr-form-section--items', $sections[1]->getExtraAttributes()['class']);
+
+    }
+
+    public function test_form_stylesheet_is_registered_as_a_scoped_static_panel_asset(): void
+    {
+        $provider = file_get_contents(app_path('Providers/Filament/AdminPanelProvider.php'));
+        $stylesheet = file_get_contents(public_path('css/purchase-requisition-forms.css'));
+
+        $this->assertStringContainsString("Css::make('purchase-requisition-forms')", $provider);
+        $this->assertStringContainsString("relativePublicPath('css/purchase-requisition-forms.css')", $provider);
+        $this->assertStringContainsString('.pr-form-section > .fi-section', $stylesheet);
+        $this->assertStringNotContainsString("\n.fi-section {", $stylesheet);
     }
 
     public function test_view_infolist_sections_span_the_full_content_width(): void

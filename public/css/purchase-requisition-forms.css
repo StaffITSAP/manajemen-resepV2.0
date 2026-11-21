@@ -1,0 +1,203 @@
+.pr-form-section,
+.pr-form-repeater,
+.pr-form-submit,
+.pr-form-cancel {
+    --pr-ink: #030302;
+    --pr-graphite: #41413f;
+    --pr-mute: #6b6b68;
+    --pr-ash: #e1e1e1;
+    --pr-linen: #f7f7f7;
+    --pr-peri: #b8caf5;
+    --pr-mint: #9bd8a9;
+    --pr-mint-t: #e6f5e9;
+    --pr-gold: #fde99b;
+    --pr-gold-t: #fef6d0;
+    --pr-papaya: #ff4500;
+}
+
+.pr-form-section > .fi-section {
+    overflow: hidden;
+    border: 1px solid var(--pr-ash);
+    border-top-width: 3px;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 5%);
+}
+
+.pr-form-section--info > .fi-section {
+    border-top-color: var(--pr-peri);
+}
+
+.pr-form-section--items > .fi-section {
+    border-top-color: var(--pr-mint);
+}
+
+.pr-form-section > .fi-section > .fi-section-header {
+    padding: 20px 24px 12px;
+}
+
+.pr-form-section .fi-section-header-heading {
+    color: var(--pr-ink);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.pr-form-section .fi-section-header-description,
+.pr-form-section .fi-fo-field-hint,
+.pr-form-section .fi-fo-field-wrp-hint {
+    color: var(--pr-mute);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.pr-form-section .fi-fo-field-label-content {
+    color: var(--pr-graphite);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.pr-form-section .fi-fo-field-label-required-mark {
+    color: var(--pr-papaya);
+}
+
+.pr-form-section .fi-input-wrp {
+    min-height: 42px;
+    border: 1px solid var(--pr-ash);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: none;
+    color: var(--pr-ink);
+}
+
+.pr-form-section .fi-input-wrp:focus-within {
+    border-color: var(--pr-ink);
+    outline: 2px solid var(--pr-ink);
+    outline-offset: 1px;
+    box-shadow: none;
+}
+
+.pr-form-section .fi-input-wrp input,
+.pr-form-section .fi-input-wrp textarea,
+.pr-form-section .fi-input-wrp select {
+    color: var(--pr-ink);
+    font-size: 14px;
+}
+
+.pr-form-section .fi-input-wrp input::placeholder,
+.pr-form-section .fi-input-wrp textarea::placeholder {
+    color: var(--pr-mute);
+    opacity: 1;
+}
+
+.pr-form-section .pr-form-readonly-field .fi-input-wrp,
+.pr-form-section .pr-form-readonly-field .fi-input-wrp:focus-within {
+    border-color: var(--pr-ash);
+    outline: none;
+    background: var(--pr-linen);
+    color: var(--pr-graphite);
+    box-shadow: none;
+}
+
+.pr-form-section .pr-form-price-field--unit .fi-input-wrp,
+.pr-form-section .pr-form-price-field--unit .fi-input-wrp:focus-within {
+    border-color: var(--pr-gold);
+    outline: none;
+    background: var(--pr-gold-t);
+    box-shadow: none;
+}
+
+.pr-form-section .pr-form-price-field--total .fi-input-wrp,
+.pr-form-section .pr-form-price-field--total .fi-input-wrp:focus-within {
+    border-color: var(--pr-mint);
+    outline: none;
+    background: var(--pr-mint-t);
+    box-shadow: none;
+}
+
+.pr-form-section .pr-form-price-field--total input {
+    font-weight: 600;
+}
+
+.pr-form-repeater .fi-fo-repeater-item {
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
+    outline-color: var(--pr-mint);
+}
+
+.pr-form-repeater .fi-fo-repeater-item-header {
+    padding: 12px 20px;
+    background: var(--pr-linen);
+}
+
+.pr-form-repeater .fi-fo-repeater-item-content {
+    padding: 20px;
+}
+
+.pr-form-repeater .fi-fo-repeater-item-header-end-actions .fi-icon-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--pr-ash);
+    border-radius: 999px;
+    color: var(--pr-papaya);
+}
+
+.pr-form-repeater .fi-fo-repeater-item-header-end-actions .fi-icon-btn:hover {
+    border-color: var(--pr-papaya);
+    color: var(--pr-papaya);
+}
+
+.pr-form-repeater .fi-fo-repeater-add .fi-btn {
+    border: 1px solid var(--pr-ash);
+    border-radius: 999px;
+    color: var(--pr-ink);
+}
+
+.pr-form-repeater .fi-fo-repeater-add .fi-btn:hover {
+    border-color: var(--pr-mint);
+    background: var(--pr-mint-t);
+    color: var(--pr-ink);
+}
+
+.pr-form-repeater .fi-fo-repeater-add .fi-btn > .fi-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--pr-mint);
+    color: var(--pr-ink);
+    padding: 3px;
+}
+
+.pr-form-submit.fi-btn {
+    min-height: 44px;
+    border-radius: 999px;
+    background: var(--pr-ink);
+    color: #fff;
+}
+
+.pr-form-submit.fi-btn:hover {
+    background: var(--pr-graphite);
+    color: #fff;
+}
+
+.pr-form-submit.fi-btn:focus-visible,
+.pr-form-cancel.fi-btn:focus-visible,
+.pr-form-repeater .fi-btn:focus-visible,
+.pr-form-repeater .fi-icon-btn:focus-visible {
+    outline: 2px solid var(--pr-ink);
+    outline-offset: 2px;
+}
+
+.pr-form-cancel.fi-btn {
+    min-height: 44px;
+    border: 1px solid var(--pr-ash);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--pr-ink);
+}
+
+.pr-form-cancel.fi-btn:hover {
+    border-color: var(--pr-graphite);
+    background: var(--pr-linen);
+    color: var(--pr-ink);
+}
